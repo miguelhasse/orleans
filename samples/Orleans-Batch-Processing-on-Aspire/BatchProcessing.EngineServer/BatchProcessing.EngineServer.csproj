@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+	<PropertyGroup>
+		<TargetFramework>net8.0</TargetFramework>
+		<Nullable>enable</Nullable>
+		<ImplicitUsings>enable</ImplicitUsings>
+    <OrleansBuildTimeCodeGen>true</OrleansBuildTimeCodeGen>
+  </PropertyGroup>
+
+	<ItemGroup>
+		<PackageReference Include="Aspire.StackExchange.Redis" />
+    <PackageReference Include="OrleansDashboard" />
+  </ItemGroup>
+
+	<ItemGroup>
+		<ProjectReference Include="..\..\..\src\Orleans.Server\Orleans.Server.csproj" />
+		<ProjectReference Include="..\..\..\src\Redis\Orleans.Clustering.Redis\Orleans.Clustering.Redis.csproj" />
+		<ProjectReference Include="..\BatchProcessing.Grains\BatchProcessing.Grains.csproj" />
+		<ProjectReference Include="..\BatchProcessing.ServiceDefaults\BatchProcessing.ServiceDefaults.csproj" />
+	</ItemGroup>
+</Project>
