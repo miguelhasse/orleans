@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <OrleansBuildTimeCodeGen>true</OrleansBuildTimeCodeGen>
+  </PropertyGroup>
+
+	<ItemGroup>
+	  <ProjectReference Include="..\..\..\src\Orleans.Sdk\Orleans.Sdk.csproj" />
+	  <ProjectReference Include="..\..\..\src\Orleans.Serialization.Abstractions\Orleans.Serialization.Abstractions.csproj" />
+	  <ProjectReference Include="..\BatchProcessing.Domain\BatchProcessing.Domain.csproj" />
+	  <ProjectReference Include="..\BatchProcessing.Shared\BatchProcessing.Shared.csproj" />
+	</ItemGroup>
+</Project>
