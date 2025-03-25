@@ -1,4 +1,4 @@
-namespace Orleans.Placement;
+namespace Orleans.Runtime;
 
 [Serializable]
 public class RegionBasedPlacement : PlacementStrategy
@@ -7,4 +7,7 @@ public class RegionBasedPlacement : PlacementStrategy
     /// Gets the singleton instance of this class.
     /// </summary>
     internal static RegionBasedPlacement Singleton { get; } = new RegionBasedPlacement();
+
+    /// <inheritdoc />
+    public override bool IsGrain => true;
 }

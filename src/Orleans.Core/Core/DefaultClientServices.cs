@@ -26,6 +26,7 @@ using Orleans.Hosting;
 using System.Reflection;
 using Microsoft.Extensions.Configuration;
 using Orleans.Placement.Repartitioning;
+using Orleans.DurableTasks;
 
 namespace Orleans
 {
@@ -163,6 +164,9 @@ namespace Orleans
             services.AddSingleton<IGrainPropertiesProvider, ImplementedInterfaceProvider>();
 
             services.AddSingleton<IGrainCallCancellationManager, ExternalClientGrainCallCancellationManager>();
+
+            // DurableTasks
+            services.TryAddSingleton<DurableTaskRequestShared>();
 
             ApplyConfiguration(builder);
         }

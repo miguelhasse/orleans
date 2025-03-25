@@ -9,5 +9,8 @@ namespace Orleans.Runtime
         public static SystemTargetPlacementStrategy Instance { get; } = new();
 
         public override bool IsUsingGrainDirectory => false;
+
+        /// <inheritdoc />
+        public override bool IsGrain => false;
     }
 }
