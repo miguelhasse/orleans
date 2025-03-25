@@ -19,6 +19,9 @@ namespace Orleans.Runtime
         /// <inheritdoc/>
         public override bool IsUsingGrainDirectory => false;
 
+        /// <inheritdoc />
+        public override bool IsGrain => false;
+
         /// <summary>
         /// Gets the maximum number of local instances which can be simultaneously active for a given grain.
         /// </summary>
