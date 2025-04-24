@@ -34,14 +34,15 @@ internal class EngineGovernorGrain(IOptions<EngineConfig> config) : IEngineGover
         }
 
         // Check if we have capacity based on what is running
-        if (_queue.Count(x => x.EngineStatus.Status == AnalysisStatus.InProgress) >= _maxCapacity)
+        if (_queue.Count(x => x.EngineStatus.Status == AnalysisStatus.InProgress
+            && string.Equals(x.EngineStatus.RegionScope, engineStatus.RegionScope, StringComparison.OrdinalIgnoreCase)) >= _maxCapacity)
         {
             SetLastUpdated(engineStatus);
             return Task.FromResult(new TryStartResponse(engineStatus.Id, false, "Engine at capacity"));
         }
 
         // check to see if this is the next available item to run based on created time
-        var nextAvailable = GetNextExpectedFromQueue();
+        var nextAvailable = GetNextExpectedFromQueue(engineStatus.RegionScope);
 
         if (nextAvailable is not null && nextAvailable.EngineStatus.Id != engineStatus.Id)
         {
@@ -70,8 +71,8 @@ internal class EngineGovernorGrain(IOptions<EngineConfig> config) : IEngineGover
     /// Gets the next expected engine from the queue based on the created time.
     /// </summary>
     /// <returns>The next expected EngineGovernorStateRecord or null if none are available.</returns>
-    private EngineGovernorStateRecord? GetNextExpectedFromQueue() => _queue
-        .Where(x => x.EngineStatus.Status == AnalysisStatus.NotStarted)
+    private EngineGovernorStateRecord? GetNextExpectedFromQueue(string? regionScope) => _queue
+        .Where(x => x.EngineStatus.Status == AnalysisStatus.NotStarted && string.Equals(x.EngineStatus.RegionScope, regionScope, StringComparison.OrdinalIgnoreCase))
         .MinBy(x => x.CreatedOn);
 
     /// <summary>

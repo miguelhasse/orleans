@@ -44,7 +44,7 @@ Range partitioning is more complicated than having a fixed number of fixed-size 
 
 For now, the new directory is opt-in, so you will need to use the following code to enable it on your silos:
 
-```
+```CSharp
 #pragma warning disable ORLEANSEXP002 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.
 siloBuilder.AddDistributedGrainDirectory();
 #pragma warning restore ORLEANSEXP002 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.

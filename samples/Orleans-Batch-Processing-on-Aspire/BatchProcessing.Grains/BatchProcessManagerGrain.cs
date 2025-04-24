@@ -2,7 +2,6 @@ using BatchProcessing.Abstractions.Grains;
 using BatchProcessing.Domain;
 using BatchProcessing.Shared;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging;
 using Orleans.Concurrency;
 
 namespace BatchProcessing.Grains;

@@ -166,10 +166,8 @@ internal class EngineGrain(ContextFactory contextFactory, IOptions<EngineConfig>
 
             var key = this.GetPrimaryKey();
 
-            var batchProcess = await context.BatchProcesses.FirstOrDefaultAsync(bp => bp.Id == key);
-
-            if (batchProcess == null)
-                throw new InvalidOperationException("Batch Process not found");
+            var batchProcess = await context.BatchProcesses.FirstOrDefaultAsync(bp => bp.Id == key)
+                ?? throw new InvalidOperationException("Batch Process not found");
 
             var aggregateResult = await GenerateAggregateResult(batchProcess);
 

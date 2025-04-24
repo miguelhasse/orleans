@@ -1,4 +1,4 @@
-@page "/"
+﻿@page "/"
 @implements IDisposable
 @rendermode @(new InteractiveWebAssemblyRenderMode(prerender: false))
 
@@ -9,7 +9,7 @@
 @using System.Collections.Concurrent
 
 <PageTitle>Engine Example</PageTitle>
-<FluentMessageBarProvider Section="MESSAGES_TOP" NewestOnTop="true" />
+<FluentMessageBarProvider Section="MESSAGES_TOP" NewestOnTop="true" MaxMessageCount="3" />
 
 <h1>Batch Engine Simulator</h1>
 
@@ -133,7 +133,12 @@
 		try
 		{
 			var runGuid = await Api.StartBatchProcessingAsync(_recordsToCreate, _regionScope);
-			_engineRuns.Add(new EngineStatusRecord { Id = runGuid, Status = AnalysisStatus.NotStarted });
+			_engineRuns.Add(new EngineStatusRecord
+			{
+				Id = runGuid,
+				RegionScope = _regionScope != null ? _regionScopes[_regionScope] : null,
+				Status = AnalysisStatus.NotStarted
+			});
 		}
 		catch (Exception ex)
 		{
@@ -186,15 +191,18 @@
 		}
 		catch (Exception ex)
 		{
-			item.Status = AnalysisStatus.Faulted;
-			MessageService.ShowMessageBar(options =>
+			if (item.Status != AnalysisStatus.Faulted)
 			{
-				options.Title = $"Error retrieving batch information for {item.Id}.";
-				options.Body = ex.Message;
-				options.Intent = MessageIntent.Error;
-				options.Section = "MESSAGES_TOP";
-				options.Timeout = 4000;
-			});
+				item.Status = AnalysisStatus.Faulted;
+				MessageService.ShowMessageBar(options =>
+				{
+					options.Title = $"Error retrieving batch information for {item.Id}.";
+					options.Body = ex.Message;
+					options.Intent = MessageIntent.Error;
+					options.Section = "MESSAGES_TOP";
+					options.Timeout = 4000;
+				});
+			}
 		}
 	}
 
