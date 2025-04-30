@@ -17,7 +17,7 @@ namespace BatchProcessing.Grains;
 /// The EngineGrain class is responsible for simulating the processing of records.
 /// It coordinates with the EngineGovernorGrain to ensure that the number of concurrently running engines does not exceed the allowed capacity.
 /// </summary>
-[/*ActivationCountBasedPlacement, */RegionBasedPlacement]
+[RegionBasedPlacement]
 internal class EngineGrain(ContextFactory contextFactory, IOptions<EngineConfig> config, ILogger<EngineGrain> logger) : Grain, IEngineGrain
 {
     private readonly CancellationTokenSource _shutdownCancellation = new();

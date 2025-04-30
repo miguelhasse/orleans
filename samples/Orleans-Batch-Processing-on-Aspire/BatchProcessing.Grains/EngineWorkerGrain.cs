@@ -9,7 +9,7 @@ using Orleans.Runtime.Placement;
 
 namespace BatchProcessing.Grains;
 
-[StatelessWorker, /*ActivationCountBasedPlacement, */RegionBasedPlacement]
+[RegionBasedPlacement]
 internal class EngineWorkerGrain(ContextFactory contextFactory, ILogger<EngineWorkerGrain> logger) : Grain, IEngineWorkerGrain
 {
     private static readonly Random Random = new();
