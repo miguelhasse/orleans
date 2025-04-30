@@ -8,7 +8,6 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using MongoDB.Driver;
-using Orleans.Concurrency;
 using Orleans.Placement;
 using Orleans.Runtime.Placement;
 
@@ -43,8 +42,8 @@ internal class EngineGrain(ContextFactory contextFactory, IOptions<EngineConfig>
     {
         if (_backgroundTask is null or { IsCompleted: true })
         {
-            _regionScope = RequestContext.Get(RegionBasedPlacementDirector.RegionHintKey) as string ?? this.GetGrainId().GetKeyExtension();
-            RequestContext.Set(RegionBasedPlacementDirector.RegionHintKey, _regionScope);
+            _regionScope = RequestContext.Get(RegionBasedPlacementDirector.RegionHintKey) as string;
+            _regionScope ??= this.GetGrainId().GetKeyExtension();
 
             await CreateRecords(recordsToSimulate);
 
@@ -90,7 +89,6 @@ internal class EngineGrain(ContextFactory contextFactory, IOptions<EngineConfig>
     /// Retrieves the current status of the engine.
     /// </summary>
     /// <returns>A Task containing the EngineStatusRecord with the current status.</returns>
-    [ReadOnly]
     public Task<EngineStatusRecord> GetStatus()
     {
         var status = new EngineStatusRecord(this.GetPrimaryKey(), _status, _regionScope, _recordCount, _recordsProcessed, _createdOn);
@@ -126,7 +124,6 @@ internal class EngineGrain(ContextFactory contextFactory, IOptions<EngineConfig>
                 }
 
                 await SetStarted(governor);
-                _status = AnalysisStatus.InProgress;
             }
 
             var batch = await GetBatch(_workerCount);
@@ -147,12 +144,12 @@ internal class EngineGrain(ContextFactory contextFactory, IOptions<EngineConfig>
                 i++;
             }
 
+            RequestContext.Set(RegionBasedPlacementDirector.RegionHintKey, _regionScope);
+
             await Task.WhenAll(workerTasks);
 
             _recordsProcessed += batch.Count;
 
-            // Update Governor with status
-            await governor.UpdateStatus(new EngineStatusRecord(this.GetPrimaryKey(), _status, _regionScope, _recordCount, _recordsProcessed, _createdOn));
         }
 
         await SetCompleted(governor);
@@ -203,6 +200,14 @@ internal class EngineGrain(ContextFactory contextFactory, IOptions<EngineConfig>
             batchProcess.Status = BatchProcessStatus.Running;
 
             await context.SaveChangesAsync();
+
+            _status = AnalysisStatus.InProgress;
+
+            // Update Governor with status
+            await governor.UpdateStatus(new EngineStatusRecord(this.GetPrimaryKey(), _status, _regionScope, _recordCount, _recordsProcessed, _createdOn));
+
+            logger.LogInformation("{ProcessId} - Analysis in progress", this.GetPrimaryKey());
+
         }
         catch (Exception ex)
         {
@@ -238,7 +243,7 @@ internal class EngineGrain(ContextFactory contextFactory, IOptions<EngineConfig>
             .Take(workerCount)
             .ToListAsync();
 
-        return batch.Select(bpi => new AnalysisRecord(bpi)).ToList();
+        return [.. batch.Select(bpi => new AnalysisRecord(bpi))];
     }
 
     /// <summary>

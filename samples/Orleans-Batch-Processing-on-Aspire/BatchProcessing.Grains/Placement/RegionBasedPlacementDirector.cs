@@ -15,11 +15,7 @@ internal class RegionBasedPlacementDirector(ISiloMetadataCache siloMetadataCache
             .ToArray();
 
         // If a valid placement hint was specified, use it.
-        if (IPlacementDirector.GetPlacementHint(target.RequestContextData, compatibleSilos) is { } placementHint)
-        {
-            return Task.FromResult(placementHint);
-        }
-
-        return Task.FromResult(compatibleSilos[Random.Shared.Next(compatibleSilos.Length)]);
+        return Task.FromResult(IPlacementDirector.GetPlacementHint(target.RequestContextData, compatibleSilos) is { } placementHint
+            ? placementHint : compatibleSilos[Random.Shared.Next(compatibleSilos.Length)]);
     }
 }

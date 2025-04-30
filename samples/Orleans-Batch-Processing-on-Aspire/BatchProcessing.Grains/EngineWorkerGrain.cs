@@ -5,6 +5,7 @@ using BatchProcessing.Shared;
 using Microsoft.Extensions.Logging;
 using Orleans.Concurrency;
 using Orleans.Placement;
+using Orleans.Runtime.Placement;
 
 namespace BatchProcessing.Grains;
 
@@ -15,6 +16,9 @@ internal class EngineWorkerGrain(ContextFactory contextFactory, ILogger<EngineWo
 
     public async Task DoWork(Guid id)
     {
+        var regionScope = RequestContext.Get(RegionBasedPlacementDirector.RegionHintKey) as string;
+        logger.LogDebug("{Id} in region {RegionScope} is processing item {ItemId}", this.GetGrainId(), regionScope, id);
+
         try
         {
             await using var context = contextFactory.Create();
@@ -24,6 +28,7 @@ internal class EngineWorkerGrain(ContextFactory contextFactory, ILogger<EngineWo
             if (item is not null)
             {
                 item.Status = BatchProcessItemStatus.Running;
+
                 await context.SaveChangesAsync();
 
                 // TODO: This is where we'll do some "analysis work" on the item
@@ -31,8 +36,8 @@ internal class EngineWorkerGrain(ContextFactory contextFactory, ILogger<EngineWo
                 await Task.Delay(Random.Next(125, 475));
 
                 item.AnalysisResult = GenerateAnalysisResult(item);
-
                 item.Status = BatchProcessItemStatus.Completed;
+
                 await context.SaveChangesAsync();
             }
         }
@@ -52,7 +57,7 @@ internal class EngineWorkerGrain(ContextFactory contextFactory, ILogger<EngineWo
     /// </summary>
     /// <param name="item">The BatchProcessItem to analyze.</param>
     /// <returns>The generated BatchProcessItemAnalysisResult object.</returns>
-    public BatchProcessItemAnalysisResult GenerateAnalysisResult(BatchProcessItem item)
+    private static BatchProcessItemAnalysisResult GenerateAnalysisResult(BatchProcessItem item)
     {
         var age = DateTime.Now.Year - item.Person.DateOfBirth.Year;
         return new BatchProcessItemAnalysisResult(DateTime.UtcNow, age, item.Person.MaritalStatus,

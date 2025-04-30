@@ -13,7 +13,7 @@
 
 <h1>Batch Engine Simulator</h1>
 
-<FluentStack Orientation="Orientation.Vertical" HorizontalAlignment="HorizontalAlignment.Left">
+<FluentStack Orientation="Orientation.Vertical" HorizontalAlignment="HorizontalAlignment.Left" Style="border: calc(var(--stroke-width) * 1px) solid var(--neutral-stroke-rest); border-radius: calc(var(--control-corner-radius) * 1px); padding: 1rem 1rem;">
 	<FluentRadioGroup @bind-Value="_regionScope" Name="region" Orientation="Orientation.Horizontal">
 		@foreach (var item in _regionScopes)
 		{
@@ -21,18 +21,20 @@
 		}
 	</FluentRadioGroup>
 	<FluentStack Orientation="Orientation.Horizontal" VerticalAlignment="VerticalAlignment.Bottom">
-		<FluentNumberField Label="Records to Create" @bind-Value="@_recordsToCreate" Step="300" Min="10" Disabled="@_isSubmitting" />
-		<FluentButton Appearance="Appearance.Accent" OnClick="@RunAnalysis">Simulate Batch Run</FluentButton>
+		<FluentNumberField Label="Records to Create" @bind-Value="@_recordsToCreate" Step="300" Min="10" />
+		<FluentButton Appearance="Appearance.Accent" OnClick="@RunAnalysis" Disabled="@_isSubmitting">Simulate Batch Run</FluentButton>
 	</FluentStack>
 </FluentStack>
-<FluentDataGrid Id="batches" TGridItem="EngineStatusRecord" Items="@_engineRuns.AsQueryable()" Pagination="@_pagination" AutoFit="true">
-	<SelectColumn TGridItem="EngineStatusRecord" Property="@(e => e.Id == _selectedId)" OnSelect="@(e => OnSelect(e.Item.Id, e.Selected))" Selectable="@(e => e.Status == AnalysisStatus.Completed)" SelectFromEntireRow="true" />
-	<PropertyColumn Title="Id" Property="@(c => c!.Id)" Align="Align.Start" />
-	<PropertyColumn Title="Status" Property="@(c => c!.Status)" Align="Align.Center" />
-	<PropertyColumn Title="Region" Property="@(c => c!.RegionScope)" Align="Align.Center" />
-	<PropertyColumn Title="Processed" Property="@(c => c!.RecordsProcessed)" Align="Align.Center" />
-	<PropertyColumn Title="Total Records" Property="@(c => c!.RecordCount)" Align="Align.Center" />
-</FluentDataGrid>
+<div>
+	<FluentDataGrid Id="batches" TGridItem="EngineStatusRecord" Items="@_engineRuns.AsQueryable()" Pagination="@_pagination" AutoFit="true" Style="overflow-x: auto;">
+		<SelectColumn TGridItem="EngineStatusRecord" Property="@(e => e.Id == _selectedId)" OnSelect="@(e => OnSelect(e.Item.Id, e.Selected))" Selectable="@(e => e.Status == AnalysisStatus.Completed)" SelectFromEntireRow="true" />
+		<PropertyColumn Title="Id" Property="@(c => c!.Id)" Align="Align.Start" />
+		<PropertyColumn Title="Status" Property="@(c => c!.Status)" Align="Align.Center" />
+		<PropertyColumn Title="Region" Property="@(c => c!.RegionScope)" Align="Align.Center" />
+		<PropertyColumn Title="Processed" Property="@(c => c!.RecordsProcessed)" Align="Align.Center" />
+		<PropertyColumn Title="Total Records" Property="@(c => c!.RecordCount)" Align="Align.Center" />
+	</FluentDataGrid>
+</div>
 <FluentPaginator State="@_pagination" />
 
 @if (_result != null)
