@@ -3,7 +3,6 @@ using BatchProcessing.Domain;
 using BatchProcessing.Domain.Models;
 using BatchProcessing.Shared;
 using Microsoft.Extensions.Logging;
-using Orleans.Concurrency;
 using Orleans.Placement;
 using Orleans.Runtime.Placement;
 
@@ -17,7 +16,7 @@ internal class EngineWorkerGrain(ContextFactory contextFactory, ILogger<EngineWo
     public async Task DoWork(Guid id)
     {
         var regionScope = RequestContext.Get(RegionBasedPlacementDirector.RegionHintKey) as string;
-        logger.LogDebug("{Id} in region {RegionScope} is processing item {ItemId}", this.GetGrainId(), regionScope, id);
+        logger.LogInformation("{Id} in region {RegionScope} is processing item {ItemId}", this.GetGrainId(), regionScope, id);
 
         try
         {

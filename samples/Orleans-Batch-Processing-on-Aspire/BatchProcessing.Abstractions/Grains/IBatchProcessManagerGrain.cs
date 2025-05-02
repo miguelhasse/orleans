@@ -5,8 +5,8 @@ using Orleans;
 public interface IBatchProcessManagerGrain : IGrainWithIntegerKey
 {
     [Alias("GetBatchProcesses")]
-    public Task<IEnumerable<BatchProcessRecord>> GetBatchProcesses();
+    Task<IEnumerable<BatchProcessRecord>> GetBatchProcesses();
 
     [Alias("GetBatchProcess")]
-    public Task<BatchProcessRecord?> GetBatchProcess(Guid engineId);
+    Task<BatchProcessRecord?> GetBatchProcess(Guid engineId);
 }

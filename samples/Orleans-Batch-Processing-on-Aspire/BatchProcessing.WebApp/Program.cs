@@ -14,7 +14,6 @@ builder.Services.AddRazorComponents()
     .AddInteractiveWebAssemblyComponents();
 builder.Services.AddFluentUIComponents();
 builder.Services.AddProblemDetails();
-builder.Services.AddHttpClient<ApiClient>();
 
 var app = builder.Build();
 

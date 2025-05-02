@@ -1,4 +1,3 @@
-using Orleans;
 using Orleans.Concurrency;
 
 namespace BatchProcessing.Abstractions.Grains;
@@ -10,6 +9,7 @@ public interface IEngineGrain : IGrainWithGuidKey
     [Alias("RunAnalysis")]
     Task RunAnalysis(int recordsToSimulate);
 
+    [ReadOnly]
     [Alias("GetStatus")]
     Task<EngineStatusRecord> GetStatus();
 }

@@ -10,7 +10,7 @@ namespace BatchProcessing.Domain;
 /// <summary>
 /// Provides extension methods for setting up domain infrastructure services in an <see cref="IHostApplicationBuilder"/>.
 /// </summary>
-public static class DependencyInjection
+public static class DependencyInjectionExtensions
 {
     /// <summary>
     /// Adds the domain infrastructure services to the specified <see cref="IHostApplicationBuilder"/>.

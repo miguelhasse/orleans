@@ -6,13 +6,14 @@ builder.AddServiceDefaults();
 
 builder.AddKeyedRedisClient("redis");
 
-builder.UseOrleans(orleansBuilder =>
+builder.UseOrleans(siloBuilder =>
 {
-    orleansBuilder.UseSiloMetadata();
+    siloBuilder.UseSiloMetadata();
+    siloBuilder.UseRedisClustering("redis");
 
     if (builder.Environment.IsDevelopment())
     {
-        orleansBuilder.UseDashboard(options => options.HostSelf = true);
+        siloBuilder.UseDashboard(options => options.HostSelf = true);
     }
 });
 

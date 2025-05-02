@@ -16,37 +16,46 @@ var orleans = builder.AddOrleans("orleans-engine")
 
 builder.AddProject<Projects.BatchProcessing_Dashboard>("dashboard")
     .WithReference(redis)
-    .WithReference(orleans);
+    .WithReference(orleans)
+    .WaitFor(redis);
 
-builder.AddProject<Projects.BatchProcessing_EngineServer>("engine")
+var engine = builder.AddProject<Projects.BatchProcessing_EngineServer>("engine")
     .WithReference(redis)
     .WithReference(orleans)
-    .WithReference(mongoDb);
-//.WithReplicas(2);
-
+    .WithReference(mongoDb)
+    //.WithReplicas(2);
+    .WaitFor(redis)
+    .WaitFor(mongoDb);
 
 builder.AddProject<Projects.BatchProcessing_EngineServer>("engine-na", "na-https")
     .WithReference(redis)
     .WithReference(orleans)
     .WithReference(mongoDb)
-    .WithReplicas(2);
+    .WithReplicas(2)
+    .WaitFor(redis)
+    .WaitFor(mongoDb);
 
 builder.AddProject<Projects.BatchProcessing_EngineServer>("engine-we", "we-https")
     .WithReference(redis)
     .WithReference(orleans)
     .WithReference(mongoDb)
-    .WithReplicas(2);
+    .WithReplicas(2)
+    .WaitFor(redis)
+    .WaitFor(mongoDb);
 
 
 builder.AddProject<Projects.BatchProcessing_EngineServer>("engine-au", "au-https")
     .WithReference(redis)
     .WithReference(orleans)
     .WithReference(mongoDb)
-    .WithReplicas(2);
+    .WithReplicas(2)
+    .WaitFor(redis)
+    .WaitFor(mongoDb);
 
 builder.AddProject<Projects.BatchProcessing_WebApp>("web-frontend")
     .WithExternalHttpEndpoints()
     .WithReference(redis)
-    .WithReference(orleans.AsClient());
+    .WithReference(orleans.AsClient())
+    .WaitFor(engine);
 
 builder.Build().Run();
