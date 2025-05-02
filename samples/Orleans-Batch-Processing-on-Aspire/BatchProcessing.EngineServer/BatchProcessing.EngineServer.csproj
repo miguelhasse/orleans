@@ -5,6 +5,7 @@
 		<Nullable>enable</Nullable>
 		<ImplicitUsings>enable</ImplicitUsings>
     <OrleansBuildTimeCodeGen>true</OrleansBuildTimeCodeGen>
+    <NoWarn>ORLEANSEXP003</NoWarn>
   </PropertyGroup>
 
 	<ItemGroup>
@@ -15,6 +16,7 @@
 	<ItemGroup>
 		<ProjectReference Include="..\..\..\src\Orleans.Server\Orleans.Server.csproj" />
 		<ProjectReference Include="..\..\..\src\Redis\Orleans.Clustering.Redis\Orleans.Clustering.Redis.csproj" />
+		<ProjectReference Include="..\..\..\src\Redis\Orleans.GrainDirectory.Redis\Orleans.GrainDirectory.Redis.csproj" />
 		<ProjectReference Include="..\BatchProcessing.Grains\BatchProcessing.Grains.csproj" />
 		<ProjectReference Include="..\BatchProcessing.ServiceDefaults\BatchProcessing.ServiceDefaults.csproj" />
 	</ItemGroup>
