@@ -1,11 +1,10 @@
 using BatchProcessing.Domain;
-using BatchProcessing.EngineServer.Services;
 using BatchProcessing.Grains;
 using StackExchange.Redis;
 
 var builder = WebApplication.CreateBuilder(args);
 
-var redisConfigurationOptions = ConfigurationOptions.Parse(builder.Configuration.GetConnectionString("redis")!);
+var redisConfig = ConfigurationOptions.Parse(builder.Configuration.GetConnectionString("redis")!);
 
 builder.AddServiceDefaults();
 
@@ -16,10 +15,12 @@ builder.AddKeyedRedisClient("redis");
 
 builder.UseOrleans(siloBuilder =>
 {
+    //siloBuilder.AddActivityPropagation();
+    //siloBuilder.AddActivationRepartitioner();
     siloBuilder.AddDistributedGrainDirectory();
 
-    siloBuilder.UseRedisClustering(options => options.ConfigurationOptions = redisConfigurationOptions);
-    siloBuilder.UseRedisGrainDirectoryAsDefault(options => options.ConfigurationOptions = redisConfigurationOptions);
+    siloBuilder.UseRedisClustering(options => options.ConfigurationOptions = redisConfig);
+    siloBuilder.UseRedisGrainDirectoryAsDefault(options => options.ConfigurationOptions = redisConfig);
     siloBuilder.UseSiloMetadataWithRegion(Environment.GetEnvironmentVariable("REGION_NAME")!);
 
     if (builder.Environment.IsDevelopment())

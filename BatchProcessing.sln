@@ -289,6 +289,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Orleans.Journaling.AzureSto
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "samples", "samples", "{02EA681E-C7D8-13C7-8484-4AC65E1B71E8}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ExternalScaler", "samples\Orleans-Batch-Processing-on-Aspire\ExternalScaler\ExternalScaler.csproj", "{903F7002-2A94-8A38-C13F-578AA535D430}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -755,6 +757,10 @@ Global
 		{BBE07118-373B-BC0A-E503-2C4125A8FCEB}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{BBE07118-373B-BC0A-E503-2C4125A8FCEB}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{BBE07118-373B-BC0A-E503-2C4125A8FCEB}.Release|Any CPU.Build.0 = Release|Any CPU
+		{903F7002-2A94-8A38-C13F-578AA535D430}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{903F7002-2A94-8A38-C13F-578AA535D430}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{903F7002-2A94-8A38-C13F-578AA535D430}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{903F7002-2A94-8A38-C13F-578AA535D430}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -893,6 +899,7 @@ Global
 		{20EFDCFC-F3FE-5509-5950-516E90DE1E05} = {4CD3AA9E-D937-48CA-BB6C-158E12257D23}
 		{4A4D30F4-6D61-7A80-8352-D76BD29582E0} = {A6573187-FD0D-4DF7-91D1-03E07E470C0A}
 		{BBE07118-373B-BC0A-E503-2C4125A8FCEB} = {4C5D66BF-EE1C-4DD8-8551-D1B7F3768A34}
+		{903F7002-2A94-8A38-C13F-578AA535D430} = {1085E02F-3AA0-4DC6-B1B8-DAF4A8C973D9}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {7BFB3429-B5BB-4DB1-95B4-67D77A864952}
