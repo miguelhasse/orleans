@@ -302,9 +302,7 @@ internal class EngineGrain(ContextFactory contextFactory, IOptions<EngineConfig>
             })
             .FirstOrDefault();
 
-        if (results is null) return null;
-
-        return new BatchProcessAggregateResult(
+        return results is null ? null : new BatchProcessAggregateResult(
             batchProcess.Id,
             analysisTimestamp,
             results.AverageAge,

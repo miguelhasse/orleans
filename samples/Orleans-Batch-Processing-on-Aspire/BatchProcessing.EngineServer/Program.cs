@@ -5,6 +5,7 @@ using StackExchange.Redis;
 var builder = WebApplication.CreateBuilder(args);
 
 var redisConfig = ConfigurationOptions.Parse(builder.Configuration.GetConnectionString("redis")!);
+var dashboard = Environment.GetEnvironmentVariable("ORLEANS_DASHBOARD") == "HostSelf";
 
 builder.AddServiceDefaults();
 
@@ -15,7 +16,7 @@ builder.AddKeyedRedisClient("redis");
 
 builder.UseOrleans(siloBuilder =>
 {
-    //siloBuilder.AddActivityPropagation();
+    siloBuilder.AddActivityPropagation();
     //siloBuilder.AddActivationRepartitioner();
     siloBuilder.AddDistributedGrainDirectory();
 
@@ -25,7 +26,7 @@ builder.UseOrleans(siloBuilder =>
 
     if (builder.Environment.IsDevelopment())
     {
-        siloBuilder.UseDashboard(options => options.HostSelf = false);
+        siloBuilder.UseDashboard(options => options.HostSelf = dashboard);
     }
 });
 
@@ -35,5 +36,10 @@ var app = builder.Build();
 
 app.MapDefaultEndpoints();
 //app.MapGet("/data.json", ([FromServices] ClusterDiagnosticsService clusterDiagnosticsService) => clusterDiagnosticsService.GetGrainCallFrequencies());
+
+if (builder.Environment.IsDevelopment() && dashboard)
+{
+    app.Map("", x => x.UseOrleansDashboard());
+}
 
 app.Run();

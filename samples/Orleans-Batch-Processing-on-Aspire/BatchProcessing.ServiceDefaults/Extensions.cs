@@ -45,10 +45,11 @@ public static class Extensions
         builder.Services.AddOpenTelemetry()
             .WithMetrics(metrics =>
             {
+                metrics.AddMeter("Microsoft.Orleans");
+
                 metrics.AddAspNetCoreInstrumentation()
                     .AddHttpClientInstrumentation()
-                    .AddRuntimeInstrumentation()
-                    .AddMeter("Microsoft.Orleans");
+                    .AddRuntimeInstrumentation();
             })
             .WithTracing(tracing =>
             {
