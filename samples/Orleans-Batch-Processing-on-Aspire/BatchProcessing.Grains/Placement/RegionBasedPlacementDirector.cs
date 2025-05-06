@@ -1,28 +1,37 @@
-using Orleans.Placement;
+using System.Collections.Immutable;
 using Orleans.Runtime.MembershipService.SiloMetadata;
 
 namespace Orleans.Runtime.Placement;
 
-internal class RegionBasedPlacementDirector(ISiloMetadataCache siloMetadataCache) : IPlacementDirector
+internal class RegionBasedPlacementDirector(ISiloMetadataCache siloMetadataCache, PlacementDirectorResolver directorResolver) : IPlacementDirector
 {
     public const string RegionHintKey = "cloud.region";
+
+    private readonly IPlacementDirector _placementDirector = directorResolver.GetPlacementDirector(InnerPlacementStrategy);
+
+    private static readonly PlacementStrategy InnerPlacementStrategy = new RandomPlacement();
 
     public Task<SiloAddress> OnAddActivation(PlacementStrategy strategy, PlacementTarget target, IPlacementContext context)
     {
         var regionScope = target.RequestContextData?.TryGetValue(RegionHintKey, out var regionHint) == true && regionHint is string
             ? (string)regionHint : target.GrainIdentity.GetKeyExtension();
 
-        var compatibleSilos = context.GetCompatibleSilos(target)
-            .Where(s => siloMetadataCache.GetSiloMetadata(s).Metadata.GetValueOrDefault(RegionHintKey) == regionScope)
-            .ToArray();
+        context = new RegionalPlacementContext(context, siloMetadataCache, regionScope);
+        return _placementDirector.OnAddActivation(InnerPlacementStrategy, target, context);
+    }
 
-        if (compatibleSilos.Length == 0)
-        {
-            throw new SiloUnavailableException($"Cannot place grain '{target.GrainIdentity}' because there are no compatible silos in region {regionScope}");
-        }
+    private class RegionalPlacementContext(IPlacementContext context, ISiloMetadataCache siloMetadataCache, string? regionScope) : IPlacementContext
+    {
+        public SiloAddress LocalSilo => context.LocalSilo;
 
-        // If a valid placement hint was specified, use it.
-        return Task.FromResult(IPlacementDirector.GetPlacementHint(target.RequestContextData, compatibleSilos) is { } placementHint
-            ? placementHint : compatibleSilos[Random.Shared.Next(compatibleSilos.Length)]);
+        public SiloStatus LocalSiloStatus => context.LocalSiloStatus;
+
+        public SiloAddress[] GetCompatibleSilos(PlacementTarget target) => FilterRegionCompatibleSilos(context.GetCompatibleSilos(target));
+
+        public IReadOnlyDictionary<ushort, SiloAddress[]> GetCompatibleSilosWithVersions(PlacementTarget target) => context.GetCompatibleSilosWithVersions(target)
+            .Select(kvp => new KeyValuePair<ushort, SiloAddress[]>(kvp.Key, FilterRegionCompatibleSilos(kvp.Value))).ToImmutableDictionary();
+
+        private SiloAddress[] FilterRegionCompatibleSilos(SiloAddress[] addresses) => [.. addresses.Where(s =>
+            siloMetadataCache.GetSiloMetadata(s).Metadata.GetValueOrDefault(RegionHintKey) == regionScope)];
     }
 }
