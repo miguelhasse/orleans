@@ -5,7 +5,9 @@ namespace Orleans.Runtime;
 [Serializable]
 public class RegionDelegatingPlacement(PlacementStrategy delegatedStrategy) : PlacementStrategy
 {
-    public const string PlacementStrategyProperty = "delegated-placement-strategy";
+    public const string RegionHintKey = "cloud.region";
+
+    private const string PlacementStrategyProperty = "delegated-placement-strategy";
 
     private static readonly PlacementStrategy DefaultStrategy = new RandomPlacement();
 

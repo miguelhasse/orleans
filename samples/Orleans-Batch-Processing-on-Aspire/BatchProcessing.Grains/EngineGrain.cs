@@ -42,7 +42,7 @@ internal class EngineGrain(ContextFactory contextFactory, IOptions<EngineConfig>
     {
         if (_backgroundTask is null or { IsCompleted: true })
         {
-            _regionScope = RequestContext.Get(RegionDelegatingPlacementDirector.RegionHintKey) as string;
+            _regionScope = RequestContext.Get(RegionDelegatingPlacement.RegionHintKey) as string;
             _regionScope ??= this.GetGrainId().GetKeyExtension();
 
             await CreateRecords(recordsToSimulate);
@@ -144,7 +144,7 @@ internal class EngineGrain(ContextFactory contextFactory, IOptions<EngineConfig>
                 i++;
             }
 
-            RequestContext.Set(RegionDelegatingPlacementDirector.RegionHintKey, _regionScope);
+            RequestContext.Set(RegionDelegatingPlacement.RegionHintKey, _regionScope);
 
             await Task.WhenAll(workerTasks);
 

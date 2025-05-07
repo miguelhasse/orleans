@@ -15,7 +15,7 @@ internal class EngineWorkerGrain(ContextFactory contextFactory, ILogger<EngineWo
 
     public async Task DoWork(Guid id)
     {
-        var regionScope = RequestContext.Get(RegionDelegatingPlacementDirector.RegionHintKey) as string;
+        var regionScope = RequestContext.Get(RegionDelegatingPlacement.RegionHintKey) as string;
         logger.LogInformation("{Id} in region {RegionScope} is processing item {ItemId}", this.GetGrainId(), regionScope, id);
 
         try

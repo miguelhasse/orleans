@@ -10,7 +10,7 @@ public static class SiloMetadataHostingExtensions
     public static ISiloBuilder UseSiloMetadataWithRegion(this ISiloBuilder builder, string regionScope, IConfigurationSection? configurationSection = null)
     {
         var dictionary = configurationSection?.Get<Dictionary<string, string>>() ?? [];
-        dictionary.TryAdd(RegionDelegatingPlacementDirector.RegionHintKey, regionScope);
+        dictionary.TryAdd(RegionDelegatingPlacement.RegionHintKey, regionScope);
 
         builder.UseSiloMetadata(dictionary);
         builder.ConfigureServices(services => services.AddPlacementDirector<RegionDelegatingPlacement, RegionDelegatingPlacementDirector>());
