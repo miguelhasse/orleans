@@ -3,21 +3,20 @@ using Orleans.Runtime.MembershipService.SiloMetadata;
 
 namespace Orleans.Runtime.Placement;
 
-internal class RegionBasedPlacementDirector(ISiloMetadataCache siloMetadataCache, PlacementDirectorResolver directorResolver) : IPlacementDirector
+internal class RegionDelegatingPlacementDirector(ISiloMetadataCache siloMetadataCache, PlacementDirectorResolver directorResolver) : IPlacementDirector
 {
     public const string RegionHintKey = "cloud.region";
 
-    private readonly IPlacementDirector _placementDirector = directorResolver.GetPlacementDirector(InnerPlacementStrategy);
-
-    private static readonly PlacementStrategy InnerPlacementStrategy = new RandomPlacement();
-
     public Task<SiloAddress> OnAddActivation(PlacementStrategy strategy, PlacementTarget target, IPlacementContext context)
     {
+        var innerStrategy = ((strategy as RegionDelegatingPlacement) ?? throw new ArgumentException("Argument must be of type RegionBasedPlacement", nameof(strategy))).InnerStrategy;
+        var placementDirector = directorResolver.GetPlacementDirector(innerStrategy);
+
         var regionScope = target.RequestContextData?.TryGetValue(RegionHintKey, out var regionHint) == true && regionHint is string
             ? (string)regionHint : target.GrainIdentity.GetKeyExtension();
 
         context = new RegionalPlacementContext(context, siloMetadataCache, regionScope);
-        return _placementDirector.OnAddActivation(InnerPlacementStrategy, target, context);
+        return placementDirector.OnAddActivation(innerStrategy, target, context);
     }
 
     private class RegionalPlacementContext(IPlacementContext context, ISiloMetadataCache siloMetadataCache, string? regionScope) : IPlacementContext
