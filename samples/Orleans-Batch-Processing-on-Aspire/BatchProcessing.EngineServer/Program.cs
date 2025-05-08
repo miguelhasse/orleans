@@ -1,5 +1,6 @@
 using BatchProcessing.Domain;
 using BatchProcessing.Grains;
+using Orleans.Configuration;
 using StackExchange.Redis;
 
 var builder = WebApplication.CreateBuilder(args);
