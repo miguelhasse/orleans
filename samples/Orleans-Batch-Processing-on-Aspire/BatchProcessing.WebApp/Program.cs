@@ -2,6 +2,7 @@ using BatchProcessing.Abstractions.Grains;
 using BatchProcessing.WebApp.Components;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.FluentUI.AspNetCore.Components;
+using Orleans.Runtime;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -53,7 +54,7 @@ app.MapGet("/batchProcessing/{id}/status", async (IClusterClient client, Guid id
         var status = await grain.GetStatus();
         return Results.Ok(status);
     }
-    catch (SiloUnavailableException ex)
+    catch (Exception ex) when (ex is SiloUnavailableException || ex is OrleansException)
     {
         return Results.NotFound(ex.Message);
     }

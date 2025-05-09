@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Orleans.Placement;
 using Orleans.Runtime.MembershipService.SiloMetadata;
 using Orleans.Runtime.Placement;
@@ -13,7 +14,11 @@ public static class SiloMetadataHostingExtensions
         dictionary.TryAdd(RegionDelegatingPlacement.RegionHintKey, regionScope);
 
         builder.UseSiloMetadata(dictionary);
-        builder.ConfigureServices(services => services.AddPlacementDirector<RegionDelegatingPlacement, RegionDelegatingPlacementDirector>());
+        builder.ConfigureServices(services =>
+        {
+            services.AddPlacementFilter<RegionPlacementFilterStrategy, RegionPlacementFilterDirector>(ServiceLifetime.Transient);
+            services.AddPlacementDirector<RegionDelegatingPlacement, RegionDelegatingPlacementDirector>();
+        });
         return builder;
     }
 }
