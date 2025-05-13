@@ -49,7 +49,7 @@ internal class EngineGrain(ContextFactory contextFactory, IOptions<EngineConfig>
             await CreateRecords(recordsToSimulate);
 
             _status = AnalysisStatus.NotStarted;
-            _backgroundTask = ProcessBackgroundTask();
+            _backgroundTask = Task.Factory.StartNew(ProcessBackgroundTask, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Current).Unwrap();
         }
     }
 
