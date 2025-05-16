@@ -13,6 +13,8 @@ public class RegionDelegatingPlacement(PlacementStrategy delegatedStrategy) : Pl
 
     public RegionDelegatingPlacement() : this(DefaultStrategy) { }
 
+    public override bool IsGrain => true;
+
     internal PlacementStrategy InnerStrategy { get; private set; } = delegatedStrategy;
 
     public override void Initialize(GrainProperties properties)

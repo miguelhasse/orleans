@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Diagnostics;
 using System.Runtime.ExceptionServices;
 using System.Threading.Tasks;
@@ -25,16 +25,16 @@ namespace Orleans
         public TransactionAttribute(TransactionOption requirement)
         {
             Requirement = requirement;
+            ReadOnly = false;
         }
 
         public TransactionAttribute(TransactionOptionAlias alias)
         {
             Requirement = (TransactionOption)(int)alias;
+            ReadOnly = false;
         }
 
         public TransactionOption Requirement { get; }
-
-        [Obsolete("Use [ReadOnly] attribute instead.")]
         public bool ReadOnly { get; set; }
     }
 
@@ -132,7 +132,7 @@ namespace Orleans
         }
 
         private TransactionInfo SetTransactionInfo()
-        {
+        { 
             // Clear transaction info if transaction operation requires new transaction.
             var transactionInfo = TransactionContext.GetTransactionInfo();
 
@@ -180,7 +180,7 @@ namespace Orleans
                     var transactionTimeout = Debugger.IsAttached ? TimeSpan.FromMinutes(30) : TimeSpan.FromSeconds(10);
 
                     // Start a new transaction
-                    var isReadOnly = this.Options.HasFlag(InvokeMethodOptions.ReadOnly);
+                    var isReadOnly = (this.Options | InvokeMethodOptions.ReadOnly) == InvokeMethodOptions.ReadOnly;
                     transactionInfo = await TransactionAgent.StartTransaction(isReadOnly, transactionTimeout);
                     startedNewTransaction = true;
                 }
@@ -293,12 +293,14 @@ namespace Orleans
             {
                 // Suppress any exception here, allowing ResponseCompletionSource to complete with a Response instead of an exception.
                 // This gives TransactionRequestBase a chance to inspect this instance and retrieve the TransactionInfo property first.
-                // After, it will use GetException to get and throw the exeption.
+                // After, it will use GetException to get and throw the exception.
                 return null;
             }
 
             set => _response.Exception = value;
         }
+
+        public override bool IsFinal => _response.IsFinal;
 
         public Exception GetException() => _response.Exception;
 
@@ -312,7 +314,7 @@ namespace Orleans
     }
 
     [SerializerTransparent]
-    public abstract class TransactionRequest : TransactionRequestBase
+    public abstract class TransactionRequest : TransactionRequestBase 
     {
         protected TransactionRequest(Serializer<OrleansTransactionAbortedException> exceptionSerializer, IServiceProvider serviceProvider) : base(exceptionSerializer, serviceProvider)
         {
