@@ -26,12 +26,16 @@
     </FluentStack>
 </FluentStack>
 <div>
-    <FluentDataGrid Id="batches" TGridItem="EngineStatusRecord" Items="@_engineRuns.AsQueryable()" Pagination="@_pagination" AutoFit="true" Style="overflow-x: auto;">
+    <FluentDataGrid Id="batches" TGridItem="EngineStatusRecord" Items="@FilteredEngineRuns" Pagination="@_pagination" AutoFit="true" Style="overflow-x: auto;">
         <SelectColumn TGridItem="EngineStatusRecord" Property="@(e => e.Id == _selectedId)" OnSelect="@(e => OnSelect(e.Item.Id, e.Selected))" Selectable="@(e => e.Status == AnalysisStatus.Completed)" SelectFromEntireRow="true" />
         <PropertyColumn Title="Id" Property="@(c => c!.Id)" Align="Align.Start" />
-        <PropertyColumn Title="Status" Property="@(c => c!.Status)" Align="Align.Center" />
-        <PropertyColumn Title="Region" Property="@(c => c!.RegionScope)" Align="Align.Center" />
-        <PropertyColumn Title="Processed" Property="@(c => c!.RecordsProcessed)" Align="Align.Center" />
+        <PropertyColumn Title="Status" Property="@(c => c!.Status)" Filtered="@(_visibleStatus.Count() < 4)" Align="Align.Center" Sortable="true">
+            <ColumnOptions>
+                <StatusFilter @bind-Value="_visibleStatus" />
+            </ColumnOptions>
+        </PropertyColumn>
+        <PropertyColumn Title="Region" Property="@(c => c!.RegionScope)" Align="Align.Center" Sortable="true" />
+        <PropertyColumn Title="Processed" Property="@(c => c!.RecordsProcessed)" Align="Align.Center" Sortable="true" />
         <PropertyColumn Title="Total Records" Property="@(c => c!.RecordCount)" Align="Align.Center" />
     </FluentDataGrid>
 </div>
@@ -84,17 +88,20 @@
     private readonly PaginationState _pagination = new PaginationState { ItemsPerPage = 10 };
     private readonly ConcurrentBag<EngineStatusRecord> _engineRuns = new();
     private static readonly Dictionary<string, string> _regionScopes = new()
-	{
-		{ "NA", "North America" },
-		{ "WE", "Western Europe" },
-		{ "AU", "Australia" }
-	};
+    {
+        { "NA", "North America" },
+        { "WE", "Western Europe" },
+        { "AU", "Australia" }
+    };
+    private IEnumerable<AnalysisStatus> _visibleStatus = Enum.GetValues<AnalysisStatus>();
     private Guid? _selectedId = null;
     private BatchProcessResut? _result = null;
     private Timer? _timer;
     private int _recordsToCreate = 300;
     private string _regionScope = _regionScopes.First().Key;
     private bool _isSubmitting = false;
+
+    private IQueryable<EngineStatusRecord> FilteredEngineRuns { get => _engineRuns.AsQueryable().Where(s => _visibleStatus.Contains(s.Status)); }
 
     protected override async Task OnInitializedAsync()
     {
@@ -137,11 +144,11 @@
         {
             var runGuid = await Api.StartBatchProcessingAsync(_recordsToCreate, _regionScope);
             _engineRuns.Add(new EngineStatusRecord
-			{
-				Id = runGuid,
-				RegionScope = regionScopeName,
-				Status = AnalysisStatus.NotStarted
-			});
+                {
+                    Id = runGuid,
+                    RegionScope = regionScopeName,
+                    Status = AnalysisStatus.NotStarted
+                });
         }
         catch (Exception ex)
         {
@@ -199,34 +206,34 @@
                 return;
 
             item.Status = AnalysisStatus.Faulted;
-			MessageService.ShowMessageBar(options =>
-			{
-				options.Title = $"Error retrieving batch information for {item.Id}.";
-				options.Body = ex.Message;
-				options.Intent = MessageIntent.Error;
-				options.Section = "MESSAGES_TOP";
-				options.Timeout = 4000;
-			});
-		}
-	}
+            MessageService.ShowMessageBar(options =>
+            {
+                options.Title = $"Error retrieving batch information for {item.Id}.";
+                options.Body = ex.Message;
+                options.Intent = MessageIntent.Error;
+                options.Section = "MESSAGES_TOP";
+                options.Timeout = 4000;
+            });
+        }
+    }
 
-	private async Task UpdateEngineResult()
-	{
-		try
-		{
-			if (_selectedId != null)
-			{
-				_result = (await Api.GetBatchProcessingAsync(_selectedId.Value))?.AggregateResult;
-			}
-		}
-		catch (Exception ex)
-		{
-			Console.WriteLine(ex.Message);
-		}
-	}
+    private async Task UpdateEngineResult()
+    {
+        try
+        {
+            if (_selectedId != null)
+            {
+                _result = (await Api.GetBatchProcessingAsync(_selectedId.Value))?.AggregateResult;
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine(ex.Message);
+        }
+    }
 
-	public void Dispose()
-	{
-		_timer?.Dispose();
-	}
+    public void Dispose()
+    {
+        _timer?.Dispose();
+    }
 }
