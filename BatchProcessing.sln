@@ -305,6 +305,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WorkflowsApp.Service", "pla
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WorkflowsApp.AppHost", "playground\WorkflowsApp\WorkflowsApp.AppHost\WorkflowsApp.AppHost.csproj", "{487A0158-2183-B1F3-6981-AB2F53C1B44D}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Orleans.GrainDirectory.AdoNet", "src\AdoNet\Orleans.GrainDirectory.AdoNet\Orleans.GrainDirectory.AdoNet.csproj", "{CE7E01AB-D186-3EF5-FE10-0935D6203C22}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -795,6 +797,10 @@ Global
 		{487A0158-2183-B1F3-6981-AB2F53C1B44D}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{487A0158-2183-B1F3-6981-AB2F53C1B44D}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{487A0158-2183-B1F3-6981-AB2F53C1B44D}.Release|Any CPU.Build.0 = Release|Any CPU
+		{CE7E01AB-D186-3EF5-FE10-0935D6203C22}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{CE7E01AB-D186-3EF5-FE10-0935D6203C22}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{CE7E01AB-D186-3EF5-FE10-0935D6203C22}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{CE7E01AB-D186-3EF5-FE10-0935D6203C22}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -941,6 +947,7 @@ Global
 		{27833235-8509-432F-A302-98372DE0A7E6} = {A41DE3D1-F8AA-4234-BE6F-3C9646A1507A}
 		{575C7B01-2AD7-79DC-3CE1-1CCA421CD7DD} = {27833235-8509-432F-A302-98372DE0A7E6}
 		{487A0158-2183-B1F3-6981-AB2F53C1B44D} = {27833235-8509-432F-A302-98372DE0A7E6}
+		{CE7E01AB-D186-3EF5-FE10-0935D6203C22} = {EB2EDE59-5021-42EE-A97A-D59939B39C66}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {7BFB3429-B5BB-4DB1-95B4-67D77A864952}
