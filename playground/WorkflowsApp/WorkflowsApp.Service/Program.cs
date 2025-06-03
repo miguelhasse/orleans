@@ -1,43 +1,19 @@
-using Microsoft.Extensions.DependencyInjection;
-using Orleans.Configuration.Internal;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.DependencyInjection.Extensions;
-using Orleans.Journaling;
-using Azure.Storage.Blobs;
-using Azure.Core.Pipeline;
-using Azure.Core;
 using System.Diagnostics;
-using Newtonsoft.Json;
 using System.Distributed.DurableTasks;
-using Orleans.DurableTasks;
+using Azure.Core;
+using Azure.Core.Pipeline;
+using Azure.Storage.Blobs;
+using Orleans.Journaling;
+using Orleans.Journaling.DurableTasks;
 using Orleans.Runtime.DurableTasks;
-using WorkflowsApp.Service.Samples.HelloWorld;
-using WorkflowsApp.Service.Samples.CancelWorld;
 using WorkflowsApp.Service.Samples.Bank;
-using WorkflowsApp.Service.Samples.Parallelism;
+using WorkflowsApp.Service.Samples.CancelWorld;
+using WorkflowsApp.Service.Samples.HelloWorld;
 using WorkflowsApp.Service.Samples.HumanInTheLoop;
+using WorkflowsApp.Service.Samples.Parallelism;
 
 namespace WorkflowsApp.Service;
 #pragma warning disable CS1998 // Async method lacks 'await' operators and will run synchronously
-
-public static class DurableTaskHostingExtensions
-{
-    public static ISiloBuilder AddVolatileDurableTaskStorage(this ISiloBuilder siloBuilder)
-    {
-        siloBuilder.Services.AddTransient<VolatileDurableTaskGrainStorage>();
-        siloBuilder.Services.AddFromExisting<IDurableTaskGrainStorage, VolatileDurableTaskGrainStorage>();
-        return siloBuilder;
-    }
-
-    public static ISiloBuilder AddJournaledDurableTaskStorage(this ISiloBuilder siloBuilder)
-    {
-        siloBuilder.Services.TryAddSingleton<DurableTaskGrainStorageShared>();
-        siloBuilder.Services.TryAddScoped<DurableTaskGrainStorage>();
-        siloBuilder.Services.AddFromExisting<IDurableTaskGrainStorage, DurableTaskGrainStorage>();
-        return siloBuilder;
-    }
-}
 
 public class Program
 {

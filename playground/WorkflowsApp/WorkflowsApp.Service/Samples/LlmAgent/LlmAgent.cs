@@ -1,4 +1,5 @@
-﻿namespace WorkflowsApp.Service.Samples.LlmAgent;
+namespace WorkflowsApp.Service.Samples.LlmAgent;
+using Orleans.Journaling;
 
 public sealed class LlmAgent
 {
