@@ -50,29 +50,28 @@ public class Program
         await CancelWorld.RunAsync(app.Services);
 
         /*
-        var client = host.Services.GetRequiredService<IClusterClient>();
-
+        var client = app.Services.GetRequiredService<IClusterClient>();
         var dict = client.GetGrain<IDictionaryGrain<string, int>>("foo");
 
-        await dict.TryAddAsync("one", 1);
-        var dict = client.GetGrain<IDictionaryGrain<string, int>>("foo");
+        await dict.TryAddAsync("one", 1, 0);
 
-        await dict.TryAddAsync("one", 1);
-        var (success, value) = await dict.TryGetValueAsync("one");
-        value++;
-        await dict.SetAsync("one", value);
+        var (success, value, version) = await dict.TryGetValueAsync("one");
+
+        await dict.SetAsync("one", ++value, version);
+
         Console.WriteLine($"[one] = {value}");
+
         for (var i = 0; i < 10; i++)
         {
             var key = $"{i}";
-            (success, value) = await dict.TryGetValueAsync(key);
-            value++;
-            await dict.SetAsync(key, value);
+            (success, value, version) = await dict.TryGetValueAsync(key);
+
+            await dict.SetAsync(key, ++value, version);
         }
 
-        await foreach (var (k, v) in dict.GetValuesAsync())
+        await foreach (var (key, val, ver) in dict.GetValuesAsync())
         {
-            Console.WriteLine($"[{k}] = {v}");
+            Console.WriteLine($"[{key}] = {val}");
         }
         */
 

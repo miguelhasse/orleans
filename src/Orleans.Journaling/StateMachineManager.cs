@@ -78,7 +78,7 @@ internal sealed partial class StateMachineManager : IStateMachineManager, ILifec
         }
 
         _workSignal.Signal();
-        await task;
+        await task.ConfigureAwait(false);
     }
 
     private Task Start()
@@ -283,13 +283,13 @@ internal sealed partial class StateMachineManager : IStateMachineManager, ILifec
         }
 
         _workSignal.Signal();
-        await task;
+        await task.ConfigureAwait(false);
     }
 
     private async Task RecoverAsync(CancellationToken cancellationToken)
     {
         _stateMachineIds.ResetVolatileState();
-        await foreach (var segment in _storage.ReadAsync(cancellationToken))
+        await foreach (var segment in _storage.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
             cancellationToken.ThrowIfCancellationRequested();
             try
@@ -347,14 +347,7 @@ internal sealed partial class StateMachineManager : IStateMachineManager, ILifec
         }
 
         Debug.Assert(pendingWrite is not null);
-        if (cancellationToken.CanBeCanceled)
-        {
-            return new ValueTask(pendingWrite.WaitAsync(cancellationToken));
-        }
-        else
-        {
-            return new ValueTask(pendingWrite);
-        }
+        return new ValueTask(cancellationToken.CanBeCanceled ? pendingWrite.WaitAsync(cancellationToken) : pendingWrite);
     }
 
     private void OnSetStateMachineId(string name, ulong id)
@@ -389,10 +382,7 @@ internal sealed partial class StateMachineManager : IStateMachineManager, ILifec
         await _workLoop.WaitAsync(cancellationToken).ConfigureAwait(ConfigureAwaitOptions.ContinueOnCapturedContext | ConfigureAwaitOptions.SuppressThrowing);
     }
 
-    void IDisposable.Dispose()
-    {
-        _shutdownCancellation.Dispose();
-    }
+    void IDisposable.Dispose() => _shutdownCancellation.Dispose();
 
     private sealed class StateMachineLogWriter(StateMachineManager manager, StateMachineId streamId) : IStateMachineLogWriter
     {

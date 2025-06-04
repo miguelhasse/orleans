@@ -1,10 +1,8 @@
-﻿var builder = DistributedApplication.CreateBuilder(args);
+var builder = DistributedApplication.CreateBuilder(args);
 builder.AddAzureProvisioning();
 
 var azureStorage = builder.AddAzureStorage("az-storage").RunAsEmulator(builder =>
-    builder
-        .WithImageTag("3.33.0"));
-        //.WithLifetime(ContainerLifetime.Persistent));
+    builder.WithImageTag("3.34.0").WithLifetime(ContainerLifetime.Persistent));
 var azureBlobs = azureStorage.AddBlobs("state");
 
 var orleans = builder.AddOrleans("orleans")
