@@ -1,5 +1,6 @@
 using System;
 using System.Reflection;
+using System.Diagnostics.CodeAnalysis;
 using System.Threading.Tasks;
 using Orleans.Serialization.Cloning;
 using Orleans.Serialization.Codecs;
@@ -124,7 +125,8 @@ namespace Orleans.Runtime
     internal class GrainReferenceCopierProvider : ISpecializableCopier
     {
         /// <inheritdoc/>
-        public IDeepCopier GetSpecializedCopier(Type type) => (IDeepCopier)Activator.CreateInstance(typeof(TypedGrainReferenceCopier<>).MakeGenericType(type));
+        // ! Activator.CreateInstance will not return null for these arguments.
+        public IDeepCopier GetSpecializedCopier(Type type) => (IDeepCopier)Activator.CreateInstance(typeof(TypedGrainReferenceCopier<>).MakeGenericType(type))!;
 
         /// <inheritdoc/>
         public bool IsSupportedType(Type type) => typeof(IAddressable).IsAssignableFrom(type) && type.IsInterface;
@@ -333,13 +335,13 @@ namespace Orleans.Runtime
         /// </summary>
         /// <param name="obj">The object to test for equality against this reference.</param>
         /// <returns><c>true</c> if the object is equal to this reference.</returns>
-        public override bool Equals(object obj)
+        public override bool Equals(object? obj)
         {
             return Equals(obj as GrainReference);
         }
 
         /// <inheritdoc />
-        public bool Equals(GrainReference other) => other is not null && this.GrainId.Equals(other.GrainId);
+        public bool Equals(GrainReference? other) => other is not null && this.GrainId.Equals(other.GrainId);
 
         /// <inheritdoc />
         public override int GetHashCode() => this.GrainId.GetHashCode();
@@ -363,7 +365,7 @@ namespace Orleans.Runtime
         /// <param name="reference1">First grain reference to compare.</param>
         /// <param name="reference2">Second grain reference to compare.</param>
         /// <returns><c>true</c> if both grain references refer to the same grain (by grain identifier).</returns>
-        public static bool operator ==(GrainReference reference1, GrainReference reference2)
+        public static bool operator ==(GrainReference? reference1, GrainReference? reference2)
         {
             if (reference1 is null) return reference2 is null;
 
@@ -377,10 +379,9 @@ namespace Orleans.Runtime
         /// <param name="reference1">First grain reference to compare.</param>
         /// <param name="reference2">Second grain reference to compare.</param>
         /// <returns><c>false</c> if both grain references are resolved to the same grain (by grain identifier).</returns>
-        public static bool operator !=(GrainReference reference1, GrainReference reference2)
+        public static bool operator !=(GrainReference? reference1, GrainReference? reference2)
         {
             if (reference1 is null) return !(reference2 is null);
-
 
             return !reference1.Equals(reference2);
         }
@@ -398,10 +399,10 @@ namespace Orleans.Runtime
         /// <inheritdoc/>
         public sealed override string ToString() => $"{GrainId} ({InterfaceType})";
 
-        string IFormattable.ToString(string format, IFormatProvider formatProvider) => ToString();
+        string IFormattable.ToString(string? format, IFormatProvider? formatProvider) => ToString();
 
-        bool ISpanFormattable.TryFormat(Span<char> destination, out int charsWritten, ReadOnlySpan<char> format, IFormatProvider provider)
-            => destination.TryWrite($"{GrainId} ({InterfaceType})", out charsWritten);
+        bool ISpanFormattable.TryFormat(Span<char> destination, out int charsWritten, ReadOnlySpan<char> format, IFormatProvider? provider)
+            => destination.TryWrite($"GrainReference:{GrainId}:{InterfaceType}", out charsWritten);
 
         protected TInvokable GetInvokable<TInvokable>() => ActivatorUtilities.GetServiceOrCreateInstance<TInvokable>(Shared.ServiceProvider);
 
@@ -612,7 +613,7 @@ namespace Orleans.Runtime
     /// Base class for requests for methods which return <see cref="ValueTask"/>.
     /// </summary>
     [SerializerTransparent]
-    public abstract class Request : RequestBase 
+    public abstract class Request : RequestBase
     {
         public sealed override ValueTask<Response> Invoke()
         {
