@@ -287,14 +287,14 @@ namespace Orleans.CodeGenerator
 
                     bool ShouldIncludePrimaryConstructorParameters(INamedTypeSymbol t)
                     {
-                        static bool? TryGetBoolParameter(INamedTypeSymbol t, INamedTypeSymbol attributeType, string parameterName)
+                        static bool? TestGenerateSerializerAttribute(INamedTypeSymbol t, INamedTypeSymbol at)
                         {
-                            var attribute = t.GetAttribute(attributeType);
+                            var attribute = t.GetAttribute(at);
                             if (attribute != null)
                             {
                                 foreach (var namedArgument in attribute.NamedArguments)
                                 {
-                                    if (namedArgument.Key == parameterName)
+                                    if (namedArgument.Key == "IncludePrimaryConstructorParameters")
                                     {
                                         if (namedArgument.Value.Kind == TypedConstantKind.Primitive && namedArgument.Value.Value is bool b)
                                         {
@@ -310,7 +310,7 @@ namespace Orleans.CodeGenerator
 
                         foreach (var attr in LibraryTypes.GenerateSerializerAttributes)
                         {
-                            if (TryGetBoolParameter(t, attr, "IncludePrimaryConstructorParameters") is bool res)
+                            if (TestGenerateSerializerAttribute(t, attr) is bool res)
                             {
                                 return res;
                             }

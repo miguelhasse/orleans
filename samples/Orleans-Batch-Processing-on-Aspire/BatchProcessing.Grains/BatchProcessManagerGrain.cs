@@ -11,17 +11,18 @@ public class BatchProcessManagerGrain(ContextFactory contextFactory) : IBatchPro
 {
     public async Task<IEnumerable<BatchProcessRecord>> GetBatchProcesses()
     {
-        await using var context = contextFactory.Create();
+        using var context = contextFactory.Create();
 
         var batchProcessRecords = await context.BatchProcesses
-            .Select(x => new BatchProcessProjection(x.Id, x.CreatedOn, x.CompletedOn, x.Status)).ToListAsync();
+            .Select(x => new BatchProcessProjection(x.Id, x.CreatedOn, x.CompletedOn, x.Status))
+            .ToListAsync();
 
         return await SetRecordCountsAsync(batchProcessRecords);
     }
 
     private async Task<IEnumerable<BatchProcessRecord>> SetRecordCountsAsync(List<BatchProcessProjection> batchProcessRecords)
     {
-        await using var context = contextFactory.Create();
+        using var context = contextFactory.Create();
 
         var results = new List<BatchProcessRecord>();
 
@@ -37,7 +38,7 @@ public class BatchProcessManagerGrain(ContextFactory contextFactory) : IBatchPro
     [ReadOnly]
     public async Task<BatchProcessRecord?> GetBatchProcess(Guid engineId)
     {
-        await using var context = contextFactory.Create();
+        using var context = contextFactory.Create();
 
         var fullList= await context.BatchProcesses.Select(bp => new
         {
@@ -53,12 +54,11 @@ public class BatchProcessManagerGrain(ContextFactory contextFactory) : IBatchPro
                 bp.AggregateResult.AverageHouseholdSize,
                 //bp.AggregateResult.MaritalStatusCounts.Select(x =>
                 //    new MaritalStatusRecordAverageRecord(x.MaritalStatus, x.AverageCount)))
-                MaritalStatusCounts = bp.AggregateResult.MaritalStatusCounts.Select(x =>
-                    new
-                    {
-                        x.MaritalStatus,
-                        x.AverageCount
-                    })
+                MaritalStatusCounts = bp.AggregateResult.MaritalStatusCounts.Select(x => new
+                {
+                    x.MaritalStatus,
+                    x.AverageCount
+                })
             }
         })
         .ToListAsync();
@@ -76,8 +76,8 @@ public class BatchProcessManagerGrain(ContextFactory contextFactory) : IBatchPro
             batchProcess.AggregateResult.AverageAge,
             batchProcess.AggregateResult.AverageDependents,
             batchProcess.AggregateResult.AverageHouseholdSize,
-            batchProcess.AggregateResult.MaritalStatusCounts.Select(x =>
-                new MaritalStatusRecordAverageRecord(x.MaritalStatus, x.AverageCount)).ToList());
+            [.. batchProcess.AggregateResult.MaritalStatusCounts.Select(x =>
+                new MaritalStatusRecordAverageRecord(x.MaritalStatus, x.AverageCount))]);
 
         var recordCount = await context.BatchProcessItems.CountAsync(x => x.BatchProcessId == engineId);
 

@@ -2,7 +2,7 @@ using Orleans.Metadata;
 
 namespace Orleans.Runtime;
 
-[Serializable]
+[Serializable, GenerateSerializer, Immutable, SuppressReferenceTracking]
 public class RegionDelegatingPlacement(PlacementStrategy delegatedStrategy) : PlacementStrategy
 {
     public const string RegionHintKey = "cloud.region";
@@ -12,8 +12,6 @@ public class RegionDelegatingPlacement(PlacementStrategy delegatedStrategy) : Pl
     private static readonly PlacementStrategy DefaultStrategy = new RandomPlacement();
 
     public RegionDelegatingPlacement() : this(DefaultStrategy) { }
-
-    public override bool IsGrain => true;
 
     internal PlacementStrategy InnerStrategy { get; private set; } = delegatedStrategy;
 

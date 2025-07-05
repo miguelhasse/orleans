@@ -17,8 +17,5 @@ namespace Orleans.Runtime
         /// Gets the singleton instance of this class.
         /// </summary>
         internal static PreferLocalPlacement Singleton { get; } = new PreferLocalPlacement();
-
-        /// <inheritdoc />
-        public override bool IsGrain => true;
     }
 }

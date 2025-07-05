@@ -25,9 +25,6 @@ namespace Orleans.Runtime
         [Id(0)]
         public int MaxLocal { get; private set; }
 
-        /// <inheritdoc />
-        public override bool IsGrain => false;
-
         /// <summary>
         /// When set to <see langword="true"/>, idle workers will be proactively deactivated by the runtime.
         /// Otherwise if <see langword="false"/>, than the workers will be deactivated according to collection age.

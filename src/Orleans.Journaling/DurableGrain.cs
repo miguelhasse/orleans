@@ -1,5 +1,4 @@
 using Microsoft.Extensions.DependencyInjection;
-using Orleans.Journaling.DurableTasks;
 
 namespace Orleans.Journaling;
 
@@ -12,9 +11,6 @@ public abstract class DurableGrain : Grain, IGrainBase
         {
             participant.Participate(((IGrainBase)this).GrainContext.ObservableLifecycle);
         }
-
-        // Currently, we need to initialize this in the constructor so that it's registered when logs start being read.
-        _ = ServiceProvider.GetRequiredService<DurableTaskGrainStorage>();
     }
 
     protected IStateMachineManager StateMachineManager { get; }

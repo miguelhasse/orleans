@@ -12,8 +12,5 @@ namespace Orleans.Runtime
         /// Gets the singleton instance of this class.
         /// </summary>
         internal static RandomPlacement Singleton { get; } = new RandomPlacement();
-
-        /// <inheritdoc />
-        public override bool IsGrain => true;
     }
 }

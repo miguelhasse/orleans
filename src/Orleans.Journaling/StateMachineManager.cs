@@ -51,9 +51,6 @@ internal sealed partial class StateMachineManager : IStateMachineManager, ILifec
 
         lock (_lock)
         {
-            // TODO: if there is already a placeholder state machine with the specified name, replace it and initialize the new state machine with its state.
-            //       If the existing state machine is not a placeholder (IDurableNothing), throw an exception.
-
             _stateMachines.Add(name, stateMachine);
             _workQueue.Enqueue(new WorkItem(WorkItemType.RegisterStateMachine, completion: null)
             {
@@ -78,7 +75,7 @@ internal sealed partial class StateMachineManager : IStateMachineManager, ILifec
         }
 
         _workSignal.Signal();
-        await task.ConfigureAwait(false);
+        await task;
     }
 
     private Task Start()
@@ -283,13 +280,13 @@ internal sealed partial class StateMachineManager : IStateMachineManager, ILifec
         }
 
         _workSignal.Signal();
-        await task.ConfigureAwait(false);
+        await task;
     }
 
     private async Task RecoverAsync(CancellationToken cancellationToken)
     {
         _stateMachineIds.ResetVolatileState();
-        await foreach (var segment in _storage.ReadAsync(cancellationToken).ConfigureAwait(false))
+        await foreach (var segment in _storage.ReadAsync(cancellationToken))
         {
             cancellationToken.ThrowIfCancellationRequested();
             try
@@ -312,10 +309,8 @@ internal sealed partial class StateMachineManager : IStateMachineManager, ILifec
         }
     }
 
-    public ValueTask WriteStateAsync(CancellationToken cancellationToken)
+    public async ValueTask WriteStateAsync(CancellationToken cancellationToken)
     {
-        // TODO: deduplicate writes - if there is already a non-started write, don't enqueue another one.
-
         cancellationToken.ThrowIfCancellationRequested();
 
         Task? pendingWrite;
@@ -346,8 +341,10 @@ internal sealed partial class StateMachineManager : IStateMachineManager, ILifec
             _workSignal.Signal();
         }
 
-        Debug.Assert(pendingWrite is not null);
-        return new ValueTask(cancellationToken.CanBeCanceled ? pendingWrite.WaitAsync(cancellationToken) : pendingWrite);
+        if (pendingWrite is { } task)
+        {
+            await task.WaitAsync(cancellationToken);
+        }
     }
 
     private void OnSetStateMachineId(string name, ulong id)
@@ -382,7 +379,10 @@ internal sealed partial class StateMachineManager : IStateMachineManager, ILifec
         await _workLoop.WaitAsync(cancellationToken).ConfigureAwait(ConfigureAwaitOptions.ContinueOnCapturedContext | ConfigureAwaitOptions.SuppressThrowing);
     }
 
-    void IDisposable.Dispose() => _shutdownCancellation.Dispose();
+    void IDisposable.Dispose()
+    {
+        _shutdownCancellation.Dispose();
+    }
 
     private sealed class StateMachineLogWriter(StateMachineManager manager, StateMachineId streamId) : IStateMachineLogWriter
     {

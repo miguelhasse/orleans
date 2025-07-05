@@ -145,7 +145,8 @@ internal class EngineGrain(ContextFactory contextFactory, IOptions<EngineConfig>
                 i++;
             }
 
-            RequestContext.Set(RegionDelegatingPlacement.RegionHintKey, _regionScope);
+            if (_regionScope != null)
+                RequestContext.Set(RegionDelegatingPlacement.RegionHintKey, _regionScope);
 
             await Task.WhenAll(workerTasks);
 

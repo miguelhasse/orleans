@@ -26,8 +26,5 @@ namespace Orleans.Runtime
         /// Gets the singleton instance of this class.
         /// </summary>
         internal static ActivationCountBasedPlacement Singleton { get; } = new ActivationCountBasedPlacement();
-
-        /// <inheritdoc />
-        public override bool IsGrain => true;
     }
 }

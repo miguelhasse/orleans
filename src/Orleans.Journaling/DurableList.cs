@@ -298,7 +298,7 @@ internal sealed class IDurableCollectionDebugView<T>
     {
         get
         {
-            var items = new T[_collection.Count];
+            T[] items = new T[_collection.Count];
             _collection.CopyTo(items, 0);
             return items;
         }
