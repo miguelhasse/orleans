@@ -10,6 +10,7 @@ using Microsoft.CodeAnalysis;
 using Microsoft.Extensions.Logging;
 using Orleans.Concurrency;
 using Orleans.Internal;
+using Orleans.Runtime.Diagnostics;
 using Orleans.Runtime.Scheduler;
 using Orleans.Runtime.Utilities;
 
@@ -348,7 +349,7 @@ internal sealed partial class GrainDirectoryPartition : SystemTarget, IGrainDire
     private async Task ReleaseRangeAsync(DirectoryMembershipSnapshot previous, DirectoryMembershipSnapshot current, RingRange removedRange)
     {
         GrainRuntime.CheckRuntimeContext(this);
-        var (tcs, sw) = LockRange(removedRange, current.Version);
+        var (tcs, sw) = LockRange(removedRange, current.Version, GrainDirectoryEvents.ReleaseOperationName);
         LogDebugRelinquishingOwnership(_logger, removedRange, current.Version);
 
         try
@@ -410,7 +411,7 @@ internal sealed partial class GrainDirectoryPartition : SystemTarget, IGrainDire
         }
         finally
         {
-            UnlockRange(removedRange, current.Version, tcs, sw.Elapsed, "release");
+            UnlockRange(removedRange, current.Version, tcs, sw.Elapsed, GrainDirectoryEvents.ReleaseOperationName);
         }
     }
 
@@ -419,7 +420,7 @@ internal sealed partial class GrainDirectoryPartition : SystemTarget, IGrainDire
         GrainRuntime.CheckRuntimeContext(this);
         // Suspend the range and transfer state from the previous owners.
         // If the predecessor becomes unavailable or membership advances quickly, we will declare data loss and unlock the range.
-        var (tcs, sw) = LockRange(addedRange, current.Version);
+        var (tcs, sw) = LockRange(addedRange, current.Version, GrainDirectoryEvents.AcquireOperationName);
 
         try
         {
@@ -478,21 +479,23 @@ internal sealed partial class GrainDirectoryPartition : SystemTarget, IGrainDire
         }
         finally
         {
-            UnlockRange(addedRange, current.Version, tcs, sw.Elapsed, "acquire");
+            UnlockRange(addedRange, current.Version, tcs, sw.Elapsed, GrainDirectoryEvents.AcquireOperationName);
         }
     }
 
-    private (TaskCompletionSource Lock, ValueStopwatch Stopwatch) LockRange(RingRange range, MembershipVersion version)
+    private (TaskCompletionSource Lock, ValueStopwatch Stopwatch) LockRange(RingRange range, MembershipVersion version, string operationName)
     {
         var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         _rangeLocks.Add((range, version, tcs));
+        GrainDirectoryEvents.EmitRangeOperationStarted(_id, _partitionIndex, version, range, operationName);
         return (tcs, ValueStopwatch.StartNew());
     }
 
     private void UnlockRange(RingRange range, MembershipVersion version, TaskCompletionSource tcs, TimeSpan heldDuration, string operationName)
     {
         DirectoryInstruments.RangeLockHeldDuration.Record((long)heldDuration.TotalMilliseconds);
-        if (ShutdownToken.IsCancellationRequested)
+        var canceled = ShutdownToken.IsCancellationRequested;
+        if (canceled)
         {
             // If the partition is stopped, the range is never unlocked and the task is cancelled instead.
             tcs.SetCanceled(ShutdownToken);
@@ -502,6 +505,8 @@ internal sealed partial class GrainDirectoryPartition : SystemTarget, IGrainDire
             tcs.SetResult();
             _rangeLocks.Remove((range, version, tcs));
         }
+
+        GrainDirectoryEvents.EmitRangeOperationCompleted(_id, _partitionIndex, version, range, operationName, heldDuration, canceled);
     }
 
     private async Task<bool> TransferSnapshotAsync(
