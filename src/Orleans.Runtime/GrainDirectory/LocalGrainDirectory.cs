@@ -11,6 +11,7 @@ using Microsoft.Extensions.Options;
 using Orleans.Configuration;
 using Orleans.GrainDirectory;
 using Orleans.Internal;
+using Orleans.Runtime.Internal;
 using Orleans.Runtime.Scheduler;
 
 namespace Orleans.Runtime.GrainDirectory
@@ -122,6 +123,7 @@ namespace Orleans.Runtime.GrainDirectory
             LogDebugStart();
 
             Running = true;
+            using var _ = new ExecutionContextSuppressor();
             membershipUpdatesTask = Task.Run(() => ProcessMembershipUpdates(_membershipUpdatesCancellation.Token));
         }
 
@@ -141,14 +143,28 @@ namespace Orleans.Runtime.GrainDirectory
             //mark Running as false will exclude myself from CalculateGrainDirectoryPartition(grainId)
             Running = false;
             _membershipUpdatesCancellation.Cancel();
-            if (membershipUpdatesTask is { } task)
+            try
             {
-                await task.SuppressThrowing();
+                if (membershipUpdatesTask is { } task)
+                {
+                    await task.SuppressThrowing();
+                }
+            }
+            finally
+            {
+                _membershipUpdatesCancellation.Dispose();
             }
 
             if (this.disposeDirectoryCache)
             {
-                await GrainDirectoryCacheFactory.DisposeGrainDirectoryCacheAsync(DirectoryCache).SuppressThrowing();
+                try
+                {
+                    await GrainDirectoryCacheFactory.DisposeGrainDirectoryCacheAsync(DirectoryCache);
+                }
+                catch (Exception exception)
+                {
+                    LogWarningDisposeDirectoryCacheFailed(exception);
+                }
             }
 
             DirectoryPartition.Clear();
@@ -227,8 +243,8 @@ namespace Orleans.Runtime.GrainDirectory
             var addedSilos = GetMembershipDifference(targetMembership, previousMembership);
 
             ProcessSiloStatusChanges(snapshot, previousSnapshot, previousMembership);
-            AdjustLocalDirectory(targetMembership);
-            AdjustLocalCache(targetMembership);
+            AdjustLocalDirectory(snapshot);
+            AdjustLocalCache(snapshot, targetMembership);
 
             foreach (var silo in removedSilos)
             {
@@ -365,14 +381,14 @@ namespace Orleans.Runtime.GrainDirectory
             }
         }
 
-        private void AdjustLocalDirectory(DirectoryMembership targetMembership)
+        private void AdjustLocalDirectory(ClusterMembershipSnapshot snapshot)
         {
             var activationsToRemove = new List<(GrainId, ActivationId)>();
             foreach (var entry in this.DirectoryPartition.GetItems())
             {
                 if (entry.Value.Activation is { } address)
                 {
-                    if (IsDefunctActivationSilo(targetMembership, address.SiloAddress))
+                    if (IsDefunctActivation(address, snapshot))
                     {
                         activationsToRemove.Add((entry.Key, address.ActivationId));
                     }
@@ -385,7 +401,7 @@ namespace Orleans.Runtime.GrainDirectory
             }
         }
 
-        private void AdjustLocalCache(DirectoryMembership targetMembership)
+        private void AdjustLocalCache(ClusterMembershipSnapshot snapshot, DirectoryMembership targetMembership)
         {
             foreach (var tuple in DirectoryCache.KeyValues)
             {
@@ -398,16 +414,26 @@ namespace Orleans.Runtime.GrainDirectory
                     continue;
                 }
 
-                if (IsDefunctActivationSilo(targetMembership, activationAddress.SiloAddress))
+                if (IsDefunctActivation(activationAddress, snapshot))
                 {
                     DirectoryCache.Remove(activationAddress.GrainId);
                 }
             }
         }
 
-        private static bool IsDefunctActivationSilo(DirectoryMembership targetMembership, SiloAddress? silo)
+        private static bool IsDefunctActivation(GrainAddress address, ClusterMembershipSnapshot snapshot)
         {
-            return silo is null || !targetMembership.MembershipCache.Contains(silo);
+            if (address.SiloAddress is not { } silo)
+            {
+                return true;
+            }
+
+            if (snapshot.Members.TryGetValue(silo, out var member))
+            {
+                return member.Status == SiloStatus.Dead;
+            }
+
+            return address.MembershipVersion < snapshot.Version;
         }
 
         internal SiloAddress? FindPredecessor(SiloAddress silo)
@@ -1016,6 +1042,12 @@ namespace Orleans.Runtime.GrainDirectory
             Message = "Failed to refresh cluster membership after a directory membership update processing error."
         )]
         private partial void LogWarningRefreshingClusterMembershipFailed(Exception exception);
+
+        [LoggerMessage(
+            Level = LogLevel.Warning,
+            Message = "Failed to dispose the grain directory cache."
+        )]
+        private partial void LogWarningDisposeDirectoryCacheFailed(Exception exception);
 
         [LoggerMessage(
             Level = LogLevel.Debug,
