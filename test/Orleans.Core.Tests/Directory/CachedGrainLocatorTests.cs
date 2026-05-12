@@ -146,7 +146,7 @@ namespace UnitTests.Directory
                 .AddSingleton<IGrainDirectoryCache>(cache)
                 .BuildServiceProvider();
             Factory<LocalGrainDirectoryPartition> partitionFactory = () => new LocalGrainDirectoryPartition(
-                siloStatusOracle,
+                membershipService.Target,
                 Options.Create(new GrainDirectoryOptions()),
                 this.loggerFactory);
             var systemTargetShared = new SystemTargetShared(
@@ -197,7 +197,7 @@ namespace UnitTests.Directory
             grainFactory.GetSystemTarget<IRemoteGrainDirectory>(Constants.DirectoryServiceType, remoteSilo).Returns(remoteDirectory);
             var services = new ServiceCollection().BuildServiceProvider();
             Factory<LocalGrainDirectoryPartition> partitionFactory = () => new LocalGrainDirectoryPartition(
-                siloStatusOracle,
+                membershipService.Target,
                 Options.Create(new GrainDirectoryOptions()),
                 this.loggerFactory);
             var systemTargetShared = new SystemTargetShared(
@@ -454,6 +454,35 @@ namespace UnitTests.Directory
             await this.lifecycle.OnStop();
         }
 
+        [Theory]
+        [InlineData(SiloStatus.ShuttingDown)]
+        [InlineData(SiloStatus.Stopping)]
+        public async Task LocalLookupWhenCachedEntrySiloIsTerminatingButNotDead(SiloStatus status)
+        {
+            var silo = GenerateSiloAddress();
+
+            // Setup membership service
+            this.mockMembershipService.UpdateSiloStatus(silo, SiloStatus.Active, "silo");
+            await this.lifecycle.OnStart();
+            await WaitUntilClusterChangePropagated();
+
+            var address = GenerateGrainAddress(silo);
+            this.grainDirectory.Register(address, previousAddress: null).Returns(address);
+
+            await this.grainLocator.Register(address, previousAddress: null);
+            Assert.True(this.grainLocator.TryLookupInCache(address.GrainId, out var cached));
+            Assert.Equal(address, cached);
+
+            this.mockMembershipService.UpdateSiloStatus(silo, status, "silo");
+            await WaitUntilClusterChangePropagated();
+
+            Assert.True(this.grainLocator.TryLookupInCache(address.GrainId, out cached));
+            Assert.Equal(address, cached);
+            await this.grainDirectory.DidNotReceive().UnregisterSilos(Arg.Any<List<SiloAddress>>());
+
+            await this.lifecycle.OnStop();
+        }
+
         /// <summary>
         /// Tests that the locator properly cleans up cached entries when a silo dies.
         /// This is critical for preventing requests from being sent to dead silos.
@@ -498,6 +527,51 @@ namespace UnitTests.Directory
             var result = await this.grainLocator.Lookup(expectedAddr.GrainId);
             Assert.NotNull(result);
             Assert.Equal(expectedAddr, result);
+
+            await this.lifecycle.OnStop();
+        }
+
+        [Fact]
+        public async Task CleanupWhenSiloIsDeadOnlyProcessesIncrementalChanges()
+        {
+            var expectedSilo = GenerateSiloAddress();
+            var outdatedSilo = GenerateSiloAddress();
+
+            this.mockMembershipService.UpdateSiloStatus(expectedSilo, SiloStatus.Active, "exp");
+            this.mockMembershipService.UpdateSiloStatus(outdatedSilo, SiloStatus.Active, "old");
+            await this.lifecycle.OnStart();
+            await WaitUntilClusterChangePropagated();
+
+            this.mockMembershipService.UpdateSiloStatus(outdatedSilo, SiloStatus.Dead, "old");
+            await WaitUntilClusterChangePropagated();
+
+            await this.grainDirectory
+                .Received(1)
+                .UnregisterSilos(Arg.Is<List<SiloAddress>>(list => list.Count == 1 && list.Contains(outdatedSilo)));
+
+            this.mockMembershipService.UpdateSiloStatus(expectedSilo, SiloStatus.Active, "exp2");
+            await WaitUntilClusterChangePropagated();
+
+            await this.grainDirectory
+                .Received(1)
+                .UnregisterSilos(Arg.Is<List<SiloAddress>>(list => list.Count == 1 && list.Contains(outdatedSilo)));
+
+            await this.lifecycle.OnStop();
+        }
+
+        [Fact]
+        public async Task UpdateCacheStampsCurrentMembershipVersion()
+        {
+            await this.lifecycle.OnStart();
+
+            var grainId = GrainId.Create(GrainType.Create("test"), GrainIdKeyExtensions.CreateGuidKey(Guid.NewGuid()));
+            var silo = GenerateSiloAddress();
+
+            this.grainLocator.UpdateCache(grainId, silo);
+
+            Assert.True(this.grainLocator.TryLookupInCache(grainId, out var cached));
+            Assert.Equal(silo, cached.SiloAddress);
+            Assert.Equal(this.mockMembershipService.CurrentVersion, cached.MembershipVersion);
 
             await this.lifecycle.OnStop();
         }
