@@ -13,8 +13,8 @@ internal sealed class AzureBlobStorageGrainJournalingProviderBuilder : IProvider
 {
     public void Configure(ISiloBuilder builder, string? name, IConfigurationSection configurationSection)
     {
-        builder.AddAzureAppendBlobStateMachineStorage();
-        var optionsBuilder = builder.Services.AddOptions<AzureAppendBlobStateMachineStorageOptions>();
+        builder.AddAzureBlobJournalStorage();
+        var optionsBuilder = builder.Services.AddOptions<AzureBlobJournalStorageOptions>();
         optionsBuilder.Configure<IServiceProvider>((options, services) =>
         {
             var containerName = configurationSection["ContainerName"];
@@ -53,5 +53,11 @@ internal sealed class AzureBlobStorageGrainJournalingProviderBuilder : IProvider
                 }
             }
         });
+
+        var journalFormatKey = configurationSection[nameof(JournaledStateManagerOptions.JournalFormatKey)];
+        if (!string.IsNullOrWhiteSpace(journalFormatKey))
+        {
+            builder.Services.Configure<JournaledStateManagerOptions>(options => options.JournalFormatKey = journalFormatKey);
+        }
     }
 }

@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using BenchmarkDotNet.Running;
+using Benchmarks.Journaling;
 using Benchmarks.MapReduce;
 using Benchmarks.Ping;
 using Benchmarks.Transactions;
@@ -328,6 +329,13 @@ internal class Program
             {
                 new Benchmarks.Dashboard.ManualTests().Run();
             },
+        ["Journaling"] = args =>
+        {
+            _ = BenchmarkSwitcher.FromTypes([
+                typeof(DurableListJournalBenchmarks),
+                typeof(DurableCommandReaderBenchmarks)
+            ]).Run(args);
+        },
         ["suite"] = args =>
         {
             _ = BenchmarkSwitcher.FromAssembly(typeof(Program).Assembly).Run(args);
