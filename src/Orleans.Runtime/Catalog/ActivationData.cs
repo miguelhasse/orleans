@@ -569,13 +569,16 @@ internal sealed partial class ActivationData :
         }
     }
 
-    public void Migrate(Dictionary<string, object>? requestContext, CancellationToken cancellationToken = default)
+    public void Migrate(Dictionary<string, object>? requestContext, CancellationToken cancellationToken = default) =>
+        TryStartMigration(requestContext, cancellationToken);
+
+    internal bool TryStartMigration(Dictionary<string, object>? requestContext, CancellationToken cancellationToken = default)
     {
         lock (this)
         {
             if (State is not (ActivationState.Activating or ActivationState.Valid or ActivationState.Deactivating))
             {
-                return;
+                return false;
             }
 
             // If migration has not already been started, set a migration context to capture any state which should be transferred.
@@ -587,9 +590,10 @@ internal sealed partial class ActivationData :
                 // Start deactivating the grain to prepare for migration.
                 Deactivate(new DeactivationReason(DeactivationReasonCode.Migrating, "Migrating to a new location."), cancellationToken);
             }
+
+            return true;
         }
     }
-
     public void Deactivate(DeactivationReason reason, ActivityContext? activityContext, CancellationToken cancellationToken = default)
     {
         var currentActivity = Activity.Current;
@@ -644,6 +648,8 @@ internal sealed partial class ActivationData :
                 {
                     deactivateActivity?.Stop();
                 }
+
+                Debug.Assert(State is ActivationState.Deactivating or ActivationState.Invalid, "Deactivate should leave the activation deactivating or invalid.");
             }
             catch (Exception ex)
             {
