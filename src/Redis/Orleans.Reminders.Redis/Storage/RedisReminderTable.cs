@@ -18,7 +18,7 @@ using static System.FormattableString;
 
 namespace Orleans.Reminders.Redis
 {
-    internal partial class RedisReminderTable : IReminderTable
+    internal partial class RedisReminderTable : IReminderTable, IDisposable
     {
         private readonly RedisKey _hashSetKey;
         private readonly RedisReminderTableOptions _redisOptions;
@@ -26,6 +26,7 @@ namespace Orleans.Reminders.Redis
         private readonly ILogger _logger;
         private IConnectionMultiplexer _muxer;
         private IDatabase _db;
+        private bool _muxerIsShared;
 
         private readonly JsonSerializerSettings _jsonSettings = new JsonSerializerSettings()
         {
@@ -51,7 +52,7 @@ namespace Orleans.Reminders.Redis
         {
             try
             {
-                _muxer = await _redisOptions.CreateMultiplexer(_redisOptions);
+                (_muxer, _muxerIsShared) = await _redisOptions.CreateMultiplexer(_redisOptions);
                 _db = _muxer.GetDatabase();
 
                 if (_redisOptions.EntryExpiry is { } expiry)
@@ -186,6 +187,18 @@ namespace Orleans.Reminders.Redis
             {
                 throw new RedisRemindersException(Invariant($"{exception.GetType()}: {exception.Message}"));
             }
+        }
+
+        public void Dispose()
+        {
+            if (!_muxerIsShared)
+            {
+                _muxer?.Dispose();
+            }
+
+            _muxer = null;
+            _db = null;
+            _muxerIsShared = false;
         }
 
         private static ReminderEntry ConvertToEntry(string reminderValue)

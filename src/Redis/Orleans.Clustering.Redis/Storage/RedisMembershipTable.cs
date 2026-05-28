@@ -22,6 +22,7 @@ namespace Orleans.Clustering.Redis
         private readonly RedisKey _clusterKey;
         private IConnectionMultiplexer _muxer = null!;
         private IDatabase _db = null!;
+        private bool _muxerIsShared;
 
         public RedisMembershipTable(IOptions<RedisClusteringOptions> redisOptions, IOptions<ClusterOptions> clusterOptions)
         {
@@ -40,7 +41,7 @@ namespace Orleans.Clustering.Redis
 
         public async Task InitializeMembershipTable(bool tryInitTableVersion)
         {
-            _muxer = await _redisOptions.CreateMultiplexer(_redisOptions);
+            (_muxer, _muxerIsShared) = await _redisOptions.CreateMultiplexer(_redisOptions);
             _db = _muxer.GetDatabase();
 
             if (tryInitTableVersion)
@@ -216,7 +217,14 @@ namespace Orleans.Clustering.Redis
 
         public void Dispose()
         {
-            _muxer?.Dispose();
+            if (!_muxerIsShared)
+            {
+                _muxer?.Dispose();
+            }
+
+            _muxer = null!;
+            _db = null!;
+            _muxerIsShared = false;
         }
 
         private enum UpsertResult
