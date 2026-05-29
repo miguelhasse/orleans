@@ -46,7 +46,7 @@ public class CatalogInstrumentsTests
 
         listener.Start();
 
-        CatalogInstruments.OnActivationCompleted(TimeSpan.FromMilliseconds(12), CatalogInstruments.ActivationOutcomeSuccess);
+        CatalogInstruments.OnActivationCompleted(TimeSpan.FromMilliseconds(12), CatalogInstruments.ActivationStatusSuccess, usesDirectory: true);
         CatalogInstruments.OnDeactivationCompleted(TimeSpan.FromMilliseconds(34), CatalogInstruments.DeactivationViaCollection);
 
         Assert.IsType<Histogram<double>>(activationLatencyInstrument);

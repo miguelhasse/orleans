@@ -1,3 +1,4 @@
+using System;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Threading.Tasks;
@@ -19,7 +20,27 @@ namespace Orleans.Runtime.GrainDirectory
 
         public ValueTask<GrainAddress?> Lookup(GrainId grainId) => GetGrainLocator(grainId.Type).Lookup(grainId);
 
-        public Task<GrainAddress?> Register(GrainAddress address, GrainAddress? previousRegistration) => GetGrainLocator(address.GrainId.Type).Register(address, previousRegistration);
+        public async Task<GrainAddress?> Register(GrainAddress address, GrainAddress? previousRegistration)
+        {
+            var grainLocator = GetGrainLocator(address.GrainId.Type);
+            var metrics = RegistrationMetricTracker.Start(grainLocator);
+            try
+            {
+                var result = await grainLocator.Register(address, previousRegistration);
+                metrics.RecordSucceeded();
+                return result;
+            }
+            catch (OperationCanceledException)
+            {
+                metrics.RecordCanceled();
+                throw;
+            }
+            catch
+            {
+                metrics.RecordFailed();
+                throw;
+            }
+        }
 
         public Task Unregister(GrainAddress address, UnregistrationCause cause) => GetGrainLocator(address.GrainId.Type).Unregister(address, cause);
 
@@ -30,6 +51,49 @@ namespace Orleans.Runtime.GrainDirectory
         public void InvalidateCache(GrainAddress address) => GetGrainLocator(address.GrainId.Type).InvalidateCache(address);
 
         private IGrainLocator GetGrainLocator(GrainType grainType) => _grainLocatorResolver.GetGrainLocator(grainType);
+
+        private static string GetLocatorTag(IGrainLocator grainLocator) => grainLocator switch
+        {
+            CachedGrainLocator => "cached",
+            ClientGrainLocator => "client",
+            DhtGrainLocator => "dht",
+            _ => "custom"
+        };
+
+        private readonly struct RegistrationMetricTracker
+        {
+            private readonly ValueStopwatch _stopwatch;
+            private readonly string? _locator;
+
+            private RegistrationMetricTracker(ValueStopwatch stopwatch, string locator)
+            {
+                _stopwatch = stopwatch;
+                _locator = locator;
+            }
+
+            public static RegistrationMetricTracker Start(IGrainLocator grainLocator)
+            {
+                return DirectoryInstruments.RegistrationMetricsEnabled
+                    ? new(ValueStopwatch.StartNew(), GetLocatorTag(grainLocator))
+                    : default;
+            }
+
+            public void RecordSucceeded() => Record(DirectoryInstruments.RegistrationStatusSuccess);
+
+            public void RecordCanceled() => Record(DirectoryInstruments.RegistrationStatusCanceled);
+
+            public void RecordFailed() => Record(DirectoryInstruments.RegistrationStatusError);
+
+            private void Record(string status)
+            {
+                if (_locator is null)
+                {
+                    return;
+                }
+
+                DirectoryInstruments.OnRegistrationCompleted(_stopwatch.Elapsed, _locator, status);
+            }
+        }
 
         public void UpdateCache(GrainId grainId, SiloAddress siloAddress) => GetGrainLocator(grainId.Type).UpdateCache(grainId, siloAddress);
 
