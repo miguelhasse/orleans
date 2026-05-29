@@ -43,6 +43,19 @@ namespace Orleans.Runtime
 
         public int Count => _activeCount;
 
+        internal IEnumerable<IActivationWorkingSetMember> Members => EnumerateActiveMembers();
+
+        private IEnumerable<IActivationWorkingSetMember> EnumerateActiveMembers()
+        {
+            foreach (var pair in _members)
+            {
+                if (!pair.Value.IsIdle)
+                {
+                    yield return pair.Key;
+                }
+            }
+        }
+
         public void OnActivated(IActivationWorkingSetMember member)
         {
             Debug.Assert(member is not ICollectibleGrainContext collectible || collectible.IsValid);
