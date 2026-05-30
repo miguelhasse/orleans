@@ -67,6 +67,7 @@ namespace Orleans.Hosting
             services.TryAddSingleton<TimeProvider>(TimeProvider.System);
             services.TryAddSingleton<OrleansInstruments>();
             services.TryAddSingleton<SchedulerInstruments>();
+            services.TryAddSingleton<ConsistentRingInstruments>();
 
             services.TryAddSingleton(typeof(IOptionFormatter<>), typeof(DefaultOptionsFormatter<>));
             services.TryAddSingleton(typeof(IOptionFormatterResolver<>), typeof(DefaultOptionsFormatterResolver<>));
@@ -286,9 +287,10 @@ namespace Orleans.Hosting
                     var siloDetails = sp.GetRequiredService<ILocalSiloDetails>();
                     var loggerFactory = sp.GetRequiredService<ILoggerFactory>();
                     var siloStatusOracle = sp.GetRequiredService<ISiloStatusOracle>();
+                    var consistentRingInstruments = sp.GetRequiredService<ConsistentRingInstruments>();
                     if (consistentRingOptions.UseVirtualBucketsConsistentRing)
                     {
-                        return new VirtualBucketsRingProvider(siloDetails.SiloAddress, loggerFactory, consistentRingOptions.NumVirtualBucketsConsistentRing, siloStatusOracle);
+                        return new VirtualBucketsRingProvider(siloDetails.SiloAddress, loggerFactory, consistentRingOptions.NumVirtualBucketsConsistentRing, siloStatusOracle, consistentRingInstruments);
                     }
 
                     return new ConsistentRingProvider(siloDetails.SiloAddress, loggerFactory, siloStatusOracle);
