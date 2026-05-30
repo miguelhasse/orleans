@@ -100,12 +100,18 @@ namespace Orleans.Runtime.ReminderService
             {
                 try
                 {
-                    await this.QueueTask(() => reminderTable.StopAsync()).WaitAsync(ct);
+                    await this.QueueTask(StopReminderServiceAndTable).WaitAsync(ct);
                 }
                 catch (Exception exception)
                 {
-                    LogErrorActivatingReminderService(exception);
+                    LogErrorStoppingReminderService(exception);
                     throw;
+                }
+
+                async Task StopReminderServiceAndTable()
+                {
+                    await StopReminderService();
+                    await reminderTable.StopAsync();
                 }
             }
         }
@@ -135,7 +141,7 @@ namespace Orleans.Runtime.ReminderService
             }
             catch (Exception exception)
             {
-                await Stop();
+                await StopReminderService();
                 LogErrorStartingReminderService(exception);
                 throw;
             }
@@ -144,7 +150,11 @@ namespace Orleans.Runtime.ReminderService
         public override async Task Stop()
         {
             CheckRuntimeContext();
+            await StopDeliveringReminders();
+        }
 
+        private async Task StopDeliveringReminders()
+        {
             Task? deliveryQuiescedTask = null;
             lock (_deliveryLock)
             {
@@ -156,19 +166,24 @@ namespace Orleans.Runtime.ReminderService
                 }
             }
 
-            // Stop all reminders.
-            var tasks = new List<Task>(localReminders.Count + (deliveryQuiescedTask is null ? 0 : 1));
             if (deliveryQuiescedTask is not null)
             {
-                tasks.Add(deliveryQuiescedTask);
+                await deliveryQuiescedTask;
             }
 
+            // Stop all reminders.
+            var tasks = new List<Task>(localReminders.Count);
             foreach (var reminderData in localReminders.Values)
             {
                 tasks.Add(reminderData.StopAsync(ReminderEvents.LocalReminderStopReason.ServiceStopped));
             }
 
             await Task.WhenAll(tasks);
+        }
+
+        private async Task StopReminderService()
+        {
+            await StopDeliveringReminders();
             await base.Stop();
 
             listRefreshTimer.Dispose();
@@ -625,8 +640,9 @@ namespace Orleans.Runtime.ReminderService
                     var task = this.startedTask.Task;
                     if (task.IsCompleted)
                     {
-                        // task at this point is already Faulted
+                        // Propagate any initial-load failure before checking the range.
                         task.GetAwaiter().GetResult();
+                        CheckRange();
                     }
                     else
                     {
@@ -642,18 +658,20 @@ namespace Orleans.Runtime.ReminderService
                             {
                                 throw new OrleansException("Reminder Service is still initializing and it is taking a long time. Please retry again later.", ex);
                             }
+
                             CheckRange();
                         }
                     }
                     break;
                 case GrainServiceStatus.Started:
+                    CheckRange();
                     break;
                 case GrainServiceStatus.Stopped:
-                    throw new OperationCanceledException("ReminderService has been stopped.");
+                    return Task.CompletedTask;
                 default:
                     throw new InvalidOperationException("status");
             }
-            CheckRange();
+
             return Task.CompletedTask;
 
             void CheckRange()
