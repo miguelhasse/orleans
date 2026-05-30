@@ -1,9 +1,13 @@
 using System;
-using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Orleans.Concurrency;
+using Orleans.Hosting;
 using Orleans.Runtime;
 
 namespace Orleans.DurableJobs;
@@ -15,14 +19,14 @@ internal interface IDurableJobReceiverExtension : IGrainExtension
 {
     /// <summary>
     /// Handles a durable job by either starting execution or checking the status of an already running job.
-    /// If the job identified by <see cref="IJobRunContext.RunId"/> has not been started, it will be executed.
+    /// If the job attempt identified by <see cref="IJobRunContext.Job"/> and <see cref="IJobRunContext.DequeueCount"/> has not been started, it will be executed.
     /// If it is already running, the current status is returned.
     /// </summary>
     /// <param name="context">The context containing information about the durable job.</param>
     /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
     /// <returns>A task that represents the asynchronous operation and contains the job execution result.</returns>
     [AlwaysInterleave]
-    Task<DurableJobRunResult> HandleDurableJobAsync(IJobRunContext context, CancellationToken cancellationToken);
+    ValueTask<DurableJobRunResult> HandleDurableJobAsync(IJobRunContext context, CancellationToken cancellationToken);
 }
 
 /// <inheritdoc />
@@ -30,26 +34,47 @@ internal sealed partial class DurableJobReceiverExtension : IDurableJobReceiverE
 {
     private readonly IGrainContext _grain;
     private readonly ILogger<DurableJobReceiverExtension> _logger;
-    private readonly ConcurrentDictionary<string, Task> _runningJobs = new();
+    private readonly TimeProvider _timeProvider;
+    private readonly DurableJobsOptions _options;
+    private readonly Dictionary<(string JobId, int DequeueCount), JobAttemptState> _jobAttempts = [];
+    private readonly Queue<CompletedJobAttempt> _completedJobAttempts = new();
+    private int _completedJobAttemptCount;
 
-    public DurableJobReceiverExtension(IGrainContext grain, ILogger<DurableJobReceiverExtension> logger)
+    private const int MaxCompletedJobAttempts = 65_536;
+    private static readonly TimeSpan CompletedJobAttemptRetention = TimeSpan.FromMinutes(1);
+
+    public DurableJobReceiverExtension(
+        IGrainContext grain,
+        ILogger<DurableJobReceiverExtension> logger,
+        TimeProvider timeProvider,
+        IOptions<DurableJobsOptions> options)
     {
         _grain = grain;
         _logger = logger;
+        _timeProvider = timeProvider;
+        _options = options.Value;
     }
 
     /// <inheritdoc />
-    public Task<DurableJobRunResult> HandleDurableJobAsync(IJobRunContext context, CancellationToken cancellationToken)
+    public ValueTask<DurableJobRunResult> HandleDurableJobAsync(IJobRunContext context, CancellationToken cancellationToken)
     {
-        if (_runningJobs.TryGetValue(context.RunId, out var runningTask))
+        PruneCompletedJobAttempts();
+
+        var key = GetExecutionKey(context);
+        JobAttemptState state;
+        ref var stateRef = ref CollectionsMarshal.GetValueRefOrAddDefault(_jobAttempts, key, out var exists);
+        if (!exists)
         {
-            return GetJobStatus(context, runningTask);
+            Debug.Assert(stateRef is null);
+            stateRef = new JobAttemptState(StartJob(context, cancellationToken));
         }
 
-        return StartJobAsync(context, cancellationToken);
+        Debug.Assert(stateRef is not null);
+        state = stateRef;
+        return GetJobStatus(key, context, state);
     }
 
-    private Task<DurableJobRunResult> StartJobAsync(IJobRunContext context, CancellationToken cancellationToken)
+    private Task<DurableJobRunResult> StartJob(IJobRunContext context, CancellationToken cancellationToken)
     {
         if (_grain.GrainInstance is not IDurableJobHandler handler)
         {
@@ -57,36 +82,114 @@ internal sealed partial class DurableJobReceiverExtension : IDurableJobReceiverE
             throw new InvalidOperationException($"Grain {_grain.GrainId} does not implement IDurableJobHandler");
         }
 
-        var task = handler.ExecuteJobAsync(context, cancellationToken);
-        _runningJobs[context.RunId] = task;
-
-        return GetJobStatus(context, task);
+        return ExecuteHandlerAsync(handler, context, cancellationToken);
     }
 
-    private Task<DurableJobRunResult> GetJobStatus(IJobRunContext context, Task task)
+    private async Task<DurableJobRunResult> ExecuteHandlerAsync(IDurableJobHandler handler, IJobRunContext context, CancellationToken cancellationToken)
+    {
+        var startTimestamp = _timeProvider.GetTimestamp();
+        DurableJobsInstruments.OnHandlerExecutionStarted();
+        try
+        {
+            await handler.ExecuteJobAsync(context, cancellationToken);
+            DurableJobsInstruments.OnHandlerExecutionCompleted(_timeProvider.GetElapsedTime(startTimestamp));
+            return DurableJobRunResult.Completed;
+        }
+        catch (OperationCanceledException)
+        {
+            // Cancellation can be retried.
+            DurableJobsInstruments.OnHandlerExecutionCanceled(_timeProvider.GetElapsedTime(startTimestamp));
+            throw;
+        }
+        catch (Exception exception)
+        {
+            DurableJobsInstruments.OnHandlerExecutionFailed(_timeProvider.GetElapsedTime(startTimestamp));
+            LogErrorExecutingDurableJob(exception, context.Job.Id, _grain.GrainId);
+            return DurableJobRunResult.Failed(exception);
+        }
+    }
+
+    private ValueTask<DurableJobRunResult> GetJobStatus((string JobId, int DequeueCount) key, IJobRunContext context, JobAttemptState state)
     {
         // Cancellation is cooperative: only terminal task state is authoritative for job outcome.
-        if (!task.IsCompleted)
+        if (!state.Task.IsCompleted)
         {
-            return Task.FromResult(DurableJobRunResult.PollAfter(TimeSpan.FromSeconds(1)));
+            return new(DurableJobRunResult.PollAfter(_options.JobStatusPollInterval));
         }
 
-        _runningJobs.TryRemove(context.RunId, out _);
+        RecordCompletedJobAttempt(key, state);
 
-        if (task.IsCompletedSuccessfully)
+        if (state.Task.IsCompletedSuccessfully)
         {
-            return Task.FromResult(DurableJobRunResult.Completed);
+            return new(state.Task);
         }
 
-        if (task.IsFaulted)
+        if (state.Task.IsFaulted)
         {
-            var ex = task.Exception!.InnerException ?? task.Exception;
+            var ex = state.Task.Exception!.InnerException ?? state.Task.Exception;
             LogErrorExecutingDurableJob(ex, context.Job.Id, _grain.GrainId);
-            return Task.FromResult(DurableJobRunResult.Failed(ex));
+            return new(DurableJobRunResult.Failed(ex));
         }
 
-        return Task.FromCanceled<DurableJobRunResult>(new CancellationToken(canceled: true));
+        return ValueTask.FromCanceled<DurableJobRunResult>(new CancellationToken(canceled: true));
     }
+
+    private void RecordCompletedJobAttempt((string JobId, int DequeueCount) key, JobAttemptState state)
+    {
+        if (!state.CompletionRecorded)
+        {
+            state.CompletionRecorded = true;
+            var completedTimestamp = _timeProvider.GetTimestamp();
+            state.CompletedTimestamp = completedTimestamp;
+            _completedJobAttempts.Enqueue(new CompletedJobAttempt(key, completedTimestamp));
+            _completedJobAttemptCount++;
+        }
+
+        PruneCompletedJobAttempts();
+    }
+
+    private void PruneCompletedJobAttempts()
+    {
+        var now = _timeProvider.GetTimestamp();
+        while (_completedJobAttempts.TryPeek(out var completedAttempt))
+        {
+            var expired = _timeProvider.GetElapsedTime(completedAttempt.CompletedTimestamp, now) >= CompletedJobAttemptRetention;
+            var overLimit = _completedJobAttemptCount > MaxCompletedJobAttempts;
+            if (!expired && !overLimit)
+            {
+                return;
+            }
+
+            if (!_completedJobAttempts.TryDequeue(out completedAttempt))
+            {
+                return;
+            }
+
+            if (_jobAttempts.TryGetValue(completedAttempt.Key, out var state)
+                && state.Task.IsCompleted
+                && state.CompletedTimestamp == completedAttempt.CompletedTimestamp)
+            {
+                ((ICollection<KeyValuePair<(string JobId, int DequeueCount), JobAttemptState>>)_jobAttempts).Remove(
+                    new KeyValuePair<(string JobId, int DequeueCount), JobAttemptState>(completedAttempt.Key, state));
+            }
+
+            _completedJobAttemptCount--;
+        }
+    }
+
+    private static (string JobId, int DequeueCount) GetExecutionKey(IJobRunContext context)
+        => (context.Job.Id, context.DequeueCount);
+
+    private sealed class JobAttemptState(Task<DurableJobRunResult> task)
+    {
+        public Task<DurableJobRunResult> Task { get; } = task;
+
+        public bool CompletionRecorded;
+
+        public long CompletedTimestamp;
+    }
+
+    private readonly record struct CompletedJobAttempt((string JobId, int DequeueCount) Key, long CompletedTimestamp);
 
     [LoggerMessage(Level = LogLevel.Error, Message = "Error executing durable job {JobId} on grain {GrainId}")]
     private partial void LogErrorExecutingDurableJob(Exception exception, string jobId, GrainId grainId);
@@ -94,4 +197,3 @@ internal sealed partial class DurableJobReceiverExtension : IDurableJobReceiverE
     [LoggerMessage(Level = LogLevel.Error, Message = "Grain {GrainId} does not implement IDurableJobHandler")]
     private partial void LogGrainDoesNotImplementHandler(GrainId grainId);
 }
-

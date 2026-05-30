@@ -3,6 +3,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Orleans.Configuration.Internal;
 using Orleans.Runtime;
 using Orleans.DurableJobs;
@@ -43,7 +44,11 @@ public static class DurableJobsExtensions
         services.AddKeyedTransient<IGrainExtension>(typeof(IDurableJobReceiverExtension), (sp, _) =>
         {
             var grainContextAccessor = sp.GetRequiredService<IGrainContextAccessor>();
-            return new DurableJobReceiverExtension(grainContextAccessor.GrainContext, sp.GetRequiredService<ILogger<DurableJobReceiverExtension>>());
+            return new DurableJobReceiverExtension(
+                grainContextAccessor.GrainContext,
+                sp.GetRequiredService<ILogger<DurableJobReceiverExtension>>(),
+                sp.GetService<TimeProvider>() ?? TimeProvider.System,
+                sp.GetRequiredService<IOptions<DurableJobsOptions>>());
         });
     }
 
@@ -59,7 +64,7 @@ public static class DurableJobsExtensions
     {
         builder.AddDurableJobs();
         builder.AddJournalStorage();
-        builder.UseJsonJournalFormat(options => options.AddTypeInfoResolver(DurableJobsJsonContext.Default));
+        builder.Configure<JsonJournalOptions>(options => options.AddTypeInfoResolver(DurableJobsJsonContext.Default));
 
         builder.ConfigureServices(services => services.UseVolatileJournaledDurableJobs());
         return builder;
@@ -77,7 +82,7 @@ public static class DurableJobsExtensions
     {
         var builder = new ServiceCollectionSiloBuilder(services);
         builder.AddJournalStorage();
-        builder.UseJsonJournalFormat(options => options.AddTypeInfoResolver(DurableJobsJsonContext.Default));
+        builder.Configure<JsonJournalOptions>(options => options.AddTypeInfoResolver(DurableJobsJsonContext.Default));
         return services.UseVolatileJournaledDurableJobs();
     }
 

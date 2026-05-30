@@ -33,7 +33,7 @@ public static class AzureStorageDurableJobsExtensions
 
         builder.AddDurableJobs();
         builder.AddAzureBlobJournalStorage(configure);
-        builder.UseJsonJournalFormat(options => options.AddTypeInfoResolver(DurableJobsJsonContext.Default));
+        builder.Configure<JsonJournalOptions>(options => options.AddTypeInfoResolver(DurableJobsJsonContext.Default));
         builder.Services.UseJournaledDurableJobs();
         return builder;
     }
@@ -59,7 +59,7 @@ public static class AzureStorageDurableJobsExtensions
 
         var builder = new ServiceCollectionSiloBuilder(services);
         builder.AddAzureBlobJournalStorage(configure);
-        builder.UseJsonJournalFormat(options => options.AddTypeInfoResolver(DurableJobsJsonContext.Default));
+        builder.Configure<JsonJournalOptions>(options => options.AddTypeInfoResolver(DurableJobsJsonContext.Default));
 
         services.UseJournaledDurableJobs();
         return services;

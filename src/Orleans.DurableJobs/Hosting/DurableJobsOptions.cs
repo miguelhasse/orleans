@@ -30,6 +30,20 @@ public sealed class DurableJobsOptions
     public TimeSpan ShardActivationBufferPeriod { get; set; } = TimeSpan.FromMinutes(5);
 
     /// <summary>
+    /// Gets or sets the number of writable shards to use for each shard time bucket.
+    /// Increasing this value distributes jobs with the same due-time bucket across multiple shard journals.
+    /// Default: 1.
+    /// </summary>
+    public int ShardStripeCount { get; set; } = 1;
+
+    /// <summary>
+    /// Gets or sets the delay before polling an asynchronous durable job handler again.
+    /// The job continues holding its concurrency slot while it is polled.
+    /// Default: 1 second.
+    /// </summary>
+    public TimeSpan JobStatusPollInterval { get; set; } = TimeSpan.FromSeconds(1);
+
+    /// <summary>
     /// Gets or sets the maximum number of jobs that can be executed concurrently on a single silo.
     /// Default: 10,000 × processor count.
     /// </summary>
@@ -72,6 +86,19 @@ public sealed class DurableJobsOptions
     /// Default: Retry up to 5 times with exponential backoff (2^n seconds).
     /// </summary>
     public Func<IJobRunContext, Exception, DateTimeOffset?> ShouldRetry { get; set; } = DefaultShouldRetry;
+
+    /// <summary>
+    /// Gets or sets the maximum amount of time the shard operation processor will wait for
+    /// additional mutations to join an in-flight batch after the first one arrives.
+    /// </summary>
+    /// <remarks>
+    /// When set to a positive value, the operation processor delays for up to this duration after
+    /// dequeuing the first mutation, giving subsequent mutations a chance to be coalesced into
+    /// the same journal write. This trades a bounded latency increase for the first request in
+    /// each batch against larger batch sizes under bursty/moderate load. Defaults to
+    /// <see cref="TimeSpan.Zero"/> (no linger, behavior unchanged).
+    /// </remarks>
+    public TimeSpan ShardBatchLingerDelay { get; set; } = TimeSpan.Zero;
 
     /// <summary>
     /// Gets or sets the maximum number of times a shard can be adopted from a dead owner before
@@ -166,6 +193,18 @@ public sealed partial class DurableJobsOptionsValidator : IConfigurationValidato
         {
             throw new OrleansConfigurationException("DurableJobsOptions.ShardDuration must be greater than zero.");
         }
+        if (options.ShardStripeCount <= 0)
+        {
+            throw new OrleansConfigurationException("DurableJobsOptions.ShardStripeCount must be greater than zero.");
+        }
+        if (options.ShardStripeCount > 32 * 1024)
+        {
+            throw new OrleansConfigurationException("DurableJobsOptions.ShardStripeCount must be less than or equal to 32768.");
+        }
+        if (options.JobStatusPollInterval <= TimeSpan.Zero)
+        {
+            throw new OrleansConfigurationException("DurableJobsOptions.JobStatusPollInterval must be greater than zero.");
+        }
         if (options.ShouldRetry is null)
         {
             throw new OrleansConfigurationException("DurableJobsOptions.ShouldRetry must not be null.");
@@ -185,6 +224,10 @@ public sealed partial class DurableJobsOptionsValidator : IConfigurationValidato
         if (options.MaxAdoptedCount < 0)
         {
             throw new OrleansConfigurationException("DurableJobsOptions.MaxAdoptedCount must be greater than or equal to zero.");
+        }
+        if (options.ShardBatchLingerDelay < TimeSpan.Zero)
+        {
+            throw new OrleansConfigurationException("DurableJobsOptions.ShardBatchLingerDelay must be non-negative.");
         }
         if (options.ShardClaimInitialBudget < 0)
         {
