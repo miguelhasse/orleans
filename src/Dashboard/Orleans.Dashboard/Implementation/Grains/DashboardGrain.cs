@@ -35,6 +35,11 @@ internal sealed class DashboardGrain : Grain, IDashboardGrain
     private DateTime _lastRefreshTime = DateTime.UtcNow;
     private DateTime _lastQuery = DateTime.UtcNow;
     private bool _isEnabled;
+    
+    private static readonly JsonSerializerOptions _jsonSerializerOptions = new()
+    {
+        WriteIndented = true,
+    };
 
     public DashboardGrain(
         IOptions<DashboardOptions> options,
@@ -119,7 +124,7 @@ internal sealed class DashboardGrain : Grain, IDashboardGrain
 
         var now = DateTime.UtcNow;
 
-        if ((now - _lastRefreshTime) < _updateInterval)
+        if (now - _lastRefreshTime < _updateInterval)
         {
             return;
         }
@@ -285,11 +290,16 @@ internal sealed class DashboardGrain : Grain, IDashboardGrain
                 .FirstOrDefault(w => w.FullName.Equals(grainType));
 
             var mappedGrainId = GrainStateHelper.GetGrainId(id, implementationType);
-            object grainId = mappedGrainId.Item1;
-            string keyExtension = mappedGrainId.Item2;
+
+            if (mappedGrainId.Item1 is null)
+            {
+                throw new InvalidOperationException($"Could not map the provided id to a valid grain for the type {grainType}");
+            }
+
+            var grainId = mappedGrainId.Item1;
+            var keyExtension = mappedGrainId.Item2;
 
             var propertiesAndFields = GrainStateHelper.GetPropertiesAndFieldsForGrainState(implementationType);
-
             var getGrainMethod = GrainStateHelper.GenerateGetGrainMethod(GrainFactory, grainId, keyExtension);
 
             var interfaceTypes = implementationType.GetInterfaces();
@@ -298,12 +308,7 @@ internal sealed class DashboardGrain : Grain, IDashboardGrain
             {
                 try
                 {
-                    object[] grainMethodParameters;
-                    if (string.IsNullOrWhiteSpace(keyExtension))
-                        grainMethodParameters = new object[] { interfaceType, grainId };
-                    else
-                        grainMethodParameters = new object[] { interfaceType, grainId, keyExtension };
-
+                    var grainMethodParameters = string.IsNullOrWhiteSpace(keyExtension) ? [interfaceType, grainId] : (object[])[interfaceType, grainId, keyExtension];
                     var grain = getGrainMethod.Invoke(GrainFactory, grainMethodParameters);
 
                     var methods = interfaceType.GetMethods().Where(w => w.GetParameters().Length == 0);
@@ -346,13 +351,10 @@ internal sealed class DashboardGrain : Grain, IDashboardGrain
         }
         catch (Exception ex)
         {
-            result.TryAdd("error", string.Concat(ex.Message, " - ", ex?.InnerException.Message));
+            result.TryAdd("error", ex.InnerException is null ? ex.Message : string.Concat(ex.Message, " - ", ex.InnerException.Message));
         }
 
-        return JsonSerializer.Serialize(result, options: new JsonSerializerOptions()
-        {
-            WriteIndented = true,
-        }).AsImmutable();
+        return JsonSerializer.Serialize(result, options: _jsonSerializerOptions).AsImmutable();
     }
 
     public Task<Immutable<string[]>> GetGrainTypes(string[] exclusions)
