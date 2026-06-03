@@ -798,14 +798,15 @@ public class StateManagerTests : JournalingTestBase
     public async Task StateManager_RecoveryRetry_ReplaysFixedStorage()
     {
         var validBytes = CreatePersistedValueBytes("value", 42);
-        var storage = new MutableReadStorage([.. validBytes, 1, 2, 3]);
+        // The manager retries recovery on its background work loop, so the repaired
+        // storage state must be available on the retry without depending on test-thread timing.
+        var storage = new MutableReadStorage([.. validBytes, 1, 2, 3], validBytes);
         var sut = CreateTestSystem(storage: storage);
         var value = new DurableValue<int>("value", sut.Manager, CreateValueCodec<int>());
 
         await Assert.ThrowsAsync<InvalidOperationException>(
             () => sut.Lifecycle.OnStart().WaitAsync(TimeSpan.FromSeconds(10)));
 
-        storage.Bytes = validBytes;
         await sut.Manager.WriteStateAsync(CancellationToken.None).AsTask().WaitAsync(TimeSpan.FromSeconds(10));
 
         Assert.Equal(42, value.Value);
@@ -816,13 +817,12 @@ public class StateManagerTests : JournalingTestBase
     public async Task StateManager_RecoveryRetry_PreservesUnknownStreamOnce()
     {
         var validBytes = CreateUnknownStreamBytes(new JournalStreamId(99), [1, 2, 3]);
-        var storage = new MutableReadStorage([.. validBytes, 1, 2, 3]) { IsCompactionRequested = true };
+        var storage = new MutableReadStorage([.. validBytes, 1, 2, 3], validBytes) { IsCompactionRequested = true };
         var sut = CreateTestSystem(storage: storage);
 
         await Assert.ThrowsAsync<InvalidOperationException>(
             () => sut.Lifecycle.OnStart().WaitAsync(TimeSpan.FromSeconds(10)));
 
-        storage.Bytes = validBytes;
         await sut.Manager.WriteStateAsync(CancellationToken.None).AsTask().WaitAsync(TimeSpan.FromSeconds(10));
 
         var replacement = Assert.Single(storage.Replaces);
@@ -834,13 +834,12 @@ public class StateManagerTests : JournalingTestBase
     [Fact]
     public async Task StateManager_RecoveryRetry_RemovesStaleRetiredPlaceholder()
     {
-        var storage = new MutableReadStorage([.. CreateNamedUnknownStreamBytes("stale", new JournalStreamId(8), [1, 2, 3]), 1, 2, 3]);
+        var storage = new MutableReadStorage([.. CreateNamedUnknownStreamBytes("stale", new JournalStreamId(8), [1, 2, 3]), 1, 2, 3], []);
         var sut = CreateTestSystem(storage: storage);
 
         await Assert.ThrowsAsync<InvalidOperationException>(
             () => sut.Lifecycle.OnStart().WaitAsync(TimeSpan.FromSeconds(10)));
 
-        storage.Bytes = [];
         await sut.Manager.WriteStateAsync(CancellationToken.None).AsTask().WaitAsync(TimeSpan.FromSeconds(10));
 
         Assert.False(sut.Manager.TryGetState("stale", out _));
@@ -1631,10 +1630,29 @@ public class StateManagerTests : JournalingTestBase
         public ValueTask DeleteAsync(CancellationToken cancellationToken) => default;
     }
 
-    private sealed class MutableReadStorage(byte[] bytes) : IJournalStorage
+    private sealed class MutableReadStorage : IJournalStorage
     {
         private readonly object _lock = new();
-        private byte[] _bytes = bytes.ToArray();
+        private readonly Queue<byte[]> _readSnapshots = [];
+        private byte[] _bytes;
+
+        public MutableReadStorage(params byte[][] readSnapshots)
+        {
+            // Recovery retry tests model storage being repaired after a failed read.
+            // The sequence makes that repair deterministic instead of racing the manager's retry.
+            if (readSnapshots.Length == 0)
+            {
+                throw new ArgumentException("At least one read snapshot is required.", nameof(readSnapshots));
+            }
+
+            foreach (var readSnapshot in readSnapshots)
+            {
+                ArgumentNullException.ThrowIfNull(readSnapshot);
+                _readSnapshots.Enqueue(readSnapshot.ToArray());
+            }
+
+            _bytes = readSnapshots[^1].ToArray();
+        }
 
         public byte[] Bytes
         {
@@ -1651,6 +1669,7 @@ public class StateManagerTests : JournalingTestBase
                 ArgumentNullException.ThrowIfNull(value);
                 lock (_lock)
                 {
+                    _readSnapshots.Clear();
                     _bytes = value.ToArray();
                 }
             }
@@ -1667,7 +1686,15 @@ public class StateManagerTests : JournalingTestBase
             byte[] snapshot;
             lock (_lock)
             {
-                snapshot = _bytes.ToArray();
+                if (_readSnapshots.TryDequeue(out var readSnapshot))
+                {
+                    _bytes = readSnapshot;
+                    snapshot = readSnapshot.ToArray();
+                }
+                else
+                {
+                    snapshot = _bytes.ToArray();
+                }
             }
 
             consumer.Read(snapshot, metadata: null, complete: true);
