@@ -226,24 +226,55 @@ jobs:
     continue-on-error: true
     env:
       BuildExternalAssets: "false"
+      # The official MariaDB 10.6 image is not published to GHCR. Use Google's Docker Hub mirror
+      # pinned to the official Docker Hub digest.
+      MARIADB_IMAGE: mirror.gcr.io/library/mariadb:10.6@sha256:daacc2f260f8ec999daa5e03a017a23a7e6fa3fb982aaf26e8b72f24daf03bc9
+# [SuppressMessage("Microsoft.Security", "CS002:SecretInNextLine", Justification="Not a secret")]
+      MARIADB_ROOT_PASSWORD: "mariadb"
     strategy:
       matrix:
         provider: ["MySql"]
         framework: ["net8.0", "net10.0"]
-    services:
-      mariadb:
-        image: mariadb:10.6
-        ports:
-          - 3306:3306
-        env:
-# [SuppressMessage("Microsoft.Security", "CS002:SecretInNextLine", Justification="False positive")]
-          MARIADB_ROOT_PASSWORD: "mariadb"
     steps:
     - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
     - name: Setup .NET
       uses: actions/setup-dotnet@c2fa09f4bde5ebb9d1777cf28262a3eb3db3ced7 # v5
       with:
         global-json-file: global.json
+    - name: Start MariaDB
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        bash .github/scripts/docker-pull-with-retry.sh "$MARIADB_IMAGE"
+
+        docker run -d --pull=never --name mariadb \
+          -p 3306:3306 \
+          -e MARIADB_ROOT_PASSWORD="$MARIADB_ROOT_PASSWORD" \
+          --health-cmd "mariadb-admin ping -h 127.0.0.1 -uroot -p${MARIADB_ROOT_PASSWORD} --silent" \
+          --health-interval 5s \
+          --health-timeout 5s \
+          --health-retries 24 \
+          "$MARIADB_IMAGE"
+
+        for attempt in $(seq 1 60); do
+          status="$(docker inspect --format '{{.State.Health.Status}}' mariadb)"
+          case "$status" in
+            healthy)
+              exit 0
+              ;;
+            unhealthy)
+              docker logs mariadb
+              exit 1
+              ;;
+          esac
+
+          sleep 2
+        done
+
+        echo "MariaDB did not become healthy in time."
+        docker logs mariadb
+        exit 1
     - name: Test
       run: dotnet test
         --framework ${{ matrix.framework }}
