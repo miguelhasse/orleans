@@ -29,18 +29,8 @@ namespace Orleans.Providers.Streams.Common
         private ValueStopwatch _newestMessageReadEnqueueAge;
         private long _messagesReceived;
 
-        protected DefaultQueueAdapterReceiverMonitor(KeyValuePair<string,object>[] dimensions)
-            : this(dimensions, Instruments.Meter)
-        {
-        }
-
         protected DefaultQueueAdapterReceiverMonitor(KeyValuePair<string, object>[] dimensions, OrleansInstruments instruments)
             : this(dimensions, instruments.Meter)
-        {
-        }
-
-        internal DefaultQueueAdapterReceiverMonitor(ReceiverMonitorDimensions dimensions, OrleansInstruments instruments)
-            : this(new KeyValuePair<string, object>[] { new("QueueId", dimensions.QueueId) }, instruments.Meter)
         {
         }
 
@@ -64,11 +54,8 @@ namespace Orleans.Providers.Streams.Common
             _newestMessageReadEnqueueTimeToNowCounter = meter.CreateObservableGauge<long>(InstrumentNames.STREAMS_QUEUE_NEWEST_MESSAGE_ENQUEUE_AGE, GetNewestMessageReadEnqueueAge);
         }
 
-        /// <summary>
-        /// Initializes a new instance of the <see cref="DefaultQueueAdapterReceiverMonitor"/> class.
-        /// </summary>
-        /// <param name="dimensions">The dimensions.</param>
-        public DefaultQueueAdapterReceiverMonitor(ReceiverMonitorDimensions dimensions) : this(new KeyValuePair<string,object>[] { new("QueueId", dimensions.QueueId) })
+        public DefaultQueueAdapterReceiverMonitor(ReceiverMonitorDimensions dimensions, OrleansInstruments instruments)
+            : this(new KeyValuePair<string, object>[] { new("QueueId", dimensions.QueueId) }, instruments.Meter)
         {
         }
 
