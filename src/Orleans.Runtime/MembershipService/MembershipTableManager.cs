@@ -44,9 +44,6 @@ namespace Orleans.Runtime.MembershipService
         private readonly Task _suspectOrKillsListTask;
         private readonly Channel<SuspectOrKillRequest> _trySuspectOrKillChannel = Channel.CreateBounded<SuspectOrKillRequest>(new BoundedChannelOptions(100) { FullMode = BoundedChannelFullMode.DropOldest });
 
-        // For testing.
-        internal AutoResetEvent TestingSuspectOrKillIdle = new(false);
-
         private MembershipTableSnapshot snapshot;
 
         public MembershipTableManager(
@@ -612,22 +609,15 @@ namespace Orleans.Runtime.MembershipService
         {
             public required SiloAddress SiloAddress { get; init; }
             public SiloAddress? OtherSilo { get; init; }
-            public required RequestType Type { get; init; }
+            public required MembershipEvents.SuspectOrKillRequestType Type { get; init; }
             public TaskCompletionSource? Completion { get; init; }
-
-            public enum RequestType
-            {
-                Unknown = 0,
-                SuspectOrKill,
-                Kill
-            }
 
             public static SuspectOrKillRequest CreateKillRequest(SiloAddress silo)
             {
                 return new SuspectOrKillRequest
                 {
                     SiloAddress = silo,
-                    Type = RequestType.Kill
+                    Type = MembershipEvents.SuspectOrKillRequestType.Kill
                 };
             }
 
@@ -637,7 +627,7 @@ namespace Orleans.Runtime.MembershipService
                 var request = new SuspectOrKillRequest
                 {
                     SiloAddress = silo,
-                    Type = RequestType.Kill,
+                    Type = MembershipEvents.SuspectOrKillRequestType.Kill,
                     Completion = completion
                 };
                 return (request, completion.Task);
@@ -649,7 +639,7 @@ namespace Orleans.Runtime.MembershipService
                 {
                     SiloAddress = silo,
                     OtherSilo = otherSilo,
-                    Type = RequestType.SuspectOrKill
+                    Type = MembershipEvents.SuspectOrKillRequestType.SuspectOrKill
                 };
             }
         }
@@ -670,19 +660,28 @@ namespace Orleans.Runtime.MembershipService
             {
                 while (reader.TryRead(out var request))
                 {
-                    await Task.Delay(backoff.Next(runningFailureCount), _shutdownCts.Token);
+                    var publishCompletion = false;
+                    var success = false;
+                    Exception? exception = null;
+
+                    if (runningFailureCount > 0)
+                    {
+                        await Task.Delay(backoff.Next(runningFailureCount), _shutdownCts.Token);
+                    }
 
                     try
                     {
                         switch (request.Type)
                         {
-                            case SuspectOrKillRequest.RequestType.Kill:
-                                await InnerTryKill(request.SiloAddress, _shutdownCts.Token);
+                            case MembershipEvents.SuspectOrKillRequestType.Kill:
+                                success = await InnerTryKill(request.SiloAddress, _shutdownCts.Token);
                                 break;
-                            case SuspectOrKillRequest.RequestType.SuspectOrKill:
-                                await InnerTryToSuspectOrKill(request.SiloAddress, request.OtherSilo, _shutdownCts.Token);
+                            case MembershipEvents.SuspectOrKillRequestType.SuspectOrKill:
+                                success = await InnerTryToSuspectOrKill(request.SiloAddress, request.OtherSilo, _shutdownCts.Token);
                                 break;
                         }
+
+                        publishCompletion = true;
                         runningFailureCount = 0;
                         request.Completion?.TrySetResult();
                     }
@@ -692,6 +691,8 @@ namespace Orleans.Runtime.MembershipService
                         LogErrorProcessingSuspectOrKillLists(this.log, ex, runningFailureCount);
                         if (request.Completion is not null)
                         {
+                            publishCompletion = true;
+                            exception = ex;
                             request.Completion.TrySetException(ex);
                         }
                         else
@@ -700,12 +701,23 @@ namespace Orleans.Runtime.MembershipService
                         }
                     }
 
-                    if (!reader.TryPeek(out _))
+                    if (publishCompletion)
                     {
-                        TestingSuspectOrKillIdle.Set();
+                        this.PublishSuspectOrKillRequestCompletion(request, success, exception);
                     }
                 }
             }
+        }
+
+        private void PublishSuspectOrKillRequestCompletion(SuspectOrKillRequest request, bool success, Exception? exception)
+        {
+            MembershipEvents.EmitSuspectOrKillRequestCompleted(
+                this.myAddress,
+                request.SiloAddress,
+                request.OtherSilo,
+                request.Type,
+                success,
+                exception);
         }
 
         private async Task<bool> InnerTryKill(SiloAddress silo, CancellationToken cancellationToken)

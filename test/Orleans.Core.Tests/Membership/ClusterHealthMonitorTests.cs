@@ -4,7 +4,9 @@ using Microsoft.Extensions.Options;
 using NonSilo.Tests.Utilities;
 using NSubstitute;
 using Orleans.Configuration;
+using Orleans.Core.Diagnostics;
 using Orleans.Runtime.MembershipService;
+using Orleans.TestingHost.Diagnostics;
 using TestExtensions;
 using Xunit;
 using Xunit.Abstractions;
@@ -217,6 +219,7 @@ namespace NonSilo.Tests.Membership
             }
 
             var testRig = CreateClusterHealthMonitorTestRig(clusterMembershipOptions);
+            using var membershipEvents = new DiagnosticEventCollector(MembershipEvents.ListenerName);
             var probeCalls = new ConcurrentQueue<(SiloAddress Target, int ProbeNumber, bool IsIndirect)>();
             this.prober.Probe(default, default).ReturnsForAnyArgs(info =>
             {
@@ -342,7 +345,20 @@ namespace NonSilo.Tests.Membership
 
                 if (expectedMissedProbes >= clusterMembershipOptions.NumMissedProbesLimit)
                 {
-                    Assert.True(testRig.Manager.TestingSuspectOrKillIdle.WaitOne(TimeSpan.FromSeconds(45)));
+                    var expectDead = (clusterMembershipOptions.NumVotesForDeathDeclaration <= 2 && enableIndirectProbes) || numVotesForDeathDeclaration == 1;
+                    await WaitForMembershipSnapshot(membershipEvents, snapshot =>
+                    {
+                        return monitoredSilos.All(siloMonitor =>
+                        {
+                            if (!snapshot.Entries.TryGetValue(siloMonitor.TargetSiloAddress, out var entry))
+                            {
+                                return false;
+                            }
+
+                            var votes = entry.GetFreshVotes(now.UtcDateTime, clusterMembershipOptions.DeathVoteExpirationTimeout);
+                            return votes.Any(vote => vote.Item1.Equals(localSiloDetails.SiloAddress)) && (!expectDead || entry.Status == SiloStatus.Dead);
+                        });
+                    });
                 }
 
                 // Check that probes match the expected missed probes
@@ -441,6 +457,7 @@ namespace NonSilo.Tests.Membership
             }
 
             var testRig = CreateClusterHealthMonitorTestRig(clusterMembershipOptions);
+            using var membershipEvents = new DiagnosticEventCollector(MembershipEvents.ListenerName);
 
             var otherSilos = new[]
             {
@@ -526,7 +543,13 @@ namespace NonSilo.Tests.Membership
 
             if (evictWhenMaxJoinAttemptTimeExceeded)
             {
-                Assert.True(testRig.Manager.TestingSuspectOrKillIdle.WaitOne(TimeSpan.FromSeconds(45)));
+                await WaitForMembershipSnapshot(membershipEvents, snapshot =>
+                {
+                    return snapshot.Entries.TryGetValue(Silo(joiningSilo), out var joining)
+                        && joining.Status == SiloStatus.Dead
+                        && snapshot.Entries.TryGetValue(Silo(createdSilo), out var created)
+                        && created.Status == SiloStatus.Dead;
+                });
             }
 
             await Until(() => testRig.TestAccessor.ObservedVersion > lastVersion);
@@ -583,6 +606,16 @@ namespace NonSilo.Tests.Membership
             var maxTimeout = 40_000;
             while (!condition() && (maxTimeout -= 10) > 0) await Task.Delay(10);
             Assert.True(maxTimeout > 0);
+        }
+
+        private static async Task<MembershipTableSnapshot> WaitForMembershipSnapshot(DiagnosticEventCollector membershipEvents, Func<MembershipTableSnapshot, bool> condition)
+        {
+            var diagnosticEvent = await membershipEvents.WaitForEventAsync(
+                nameof(MembershipEvents.ViewChanged),
+                evt => evt.Payload is MembershipEvents.ViewChanged viewChanged && condition(viewChanged.Snapshot),
+                TimeSpan.FromSeconds(40));
+
+            return Assert.IsType<MembershipEvents.ViewChanged>(diagnosticEvent.Payload).Snapshot;
         }
 
         private async Task StopLifecycle(CancellationToken cancellation = default)
