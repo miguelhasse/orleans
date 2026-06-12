@@ -1,3 +1,5 @@
+using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using Microsoft.Extensions.Logging;
 using Orleans.Runtime;
 using Orleans.Runtime.Scheduler;
@@ -11,6 +13,59 @@ namespace UnitTestGrains
     internal static class TimerGrainTestConstants
     {
         public static readonly TimeSpan CallbackDelay = TimeSpan.FromMilliseconds(50);
+    }
+
+    public static class TimerGrainCallbackEvents
+    {
+        public const string ListenerName = "Orleans.Tests.TimerGrainCallbacks";
+
+        private static readonly DiagnosticListener Listener = new(ListenerName);
+
+        public static IObservable<CallbackEvent> AllEvents { get; } = new Observable();
+
+        public abstract class CallbackEvent(GrainId grainId)
+        {
+            public readonly GrainId GrainId = grainId;
+        }
+
+        public sealed class DelayScheduled(GrainId grainId) : CallbackEvent(grainId)
+        {
+        }
+
+        internal static void EmitDelayScheduled(GrainId grainId)
+        {
+            if (!Listener.IsEnabled(nameof(DelayScheduled)))
+            {
+                return;
+            }
+
+            Emit(grainId);
+
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            static void Emit(GrainId grainId)
+            {
+                Listener.Write(nameof(DelayScheduled), new DelayScheduled(grainId));
+            }
+        }
+
+        private sealed class Observable : IObservable<CallbackEvent>
+        {
+            public IDisposable Subscribe(IObserver<CallbackEvent> observer) => Listener.Subscribe(new Observer(observer));
+
+            private sealed class Observer(IObserver<CallbackEvent> observer) : IObserver<KeyValuePair<string, object>>
+            {
+                public void OnCompleted() => observer.OnCompleted();
+                public void OnError(Exception error) => observer.OnError(error);
+
+                public void OnNext(KeyValuePair<string, object> value)
+                {
+                    if (value.Value is CallbackEvent evt)
+                    {
+                        observer.OnNext(evt);
+                    }
+                }
+            }
+        }
     }
 
     public class TimerGrain : Grain, ITimerGrain
@@ -144,10 +199,12 @@ namespace UnitTestGrains
         private TaskScheduler activationTaskScheduler;
 
         private readonly ILogger logger;
+        private readonly TimeProvider timeProvider;
 
-        public TimerCallGrain(ILoggerFactory loggerFactory)
+        public TimerCallGrain(ILoggerFactory loggerFactory, TimeProvider timeProvider)
         {
             this.logger = loggerFactory.CreateLogger($"{this.GetType().Name}-{this.IdentityString}");
+            this.timeProvider = timeProvider;
         }
 
         public Task<int> GetTickCount() { return Task.FromResult(tickCount); }
@@ -199,6 +256,35 @@ namespace UnitTestGrains
             return Task.CompletedTask;
         }
 
+        public Task TestTimerChangeArguments()
+        {
+            ValidateTimerChangeArguments(Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
+            ValidateTimerChangeArguments(TimeSpan.Zero, Timeout.InfiniteTimeSpan);
+            ValidateTimerChangeArguments(TimeSpan.FromMicroseconds(10), Timeout.InfiniteTimeSpan);
+            ValidateTimerChangeArguments(TimeSpan.Zero, TimeSpan.Zero);
+            ValidateTimerChangeArguments(TimeSpan.FromMicroseconds(10), TimeSpan.FromMicroseconds(10));
+            ValidateTimerChangeArguments(TimeSpan.FromMilliseconds(-0.4), Timeout.InfiniteTimeSpan);
+            ValidateTimerChangeArguments(TimeSpan.FromSeconds(1), TimeSpan.FromMilliseconds(-0.5));
+            ValidateTimerChangeArguments(Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
+
+            Assert.Throws<ArgumentOutOfRangeException>(() => ValidateTimerChangeArguments(TimeSpan.FromSeconds(-5), Timeout.InfiniteTimeSpan));
+            Assert.Throws<ArgumentOutOfRangeException>(() => ValidateTimerChangeArguments(TimeSpan.MaxValue, Timeout.InfiniteTimeSpan));
+            Assert.Throws<ArgumentOutOfRangeException>(() => ValidateTimerChangeArguments(TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(-5)));
+            Assert.Throws<ArgumentOutOfRangeException>(() => ValidateTimerChangeArguments(TimeSpan.FromSeconds(1), TimeSpan.MaxValue));
+
+            return Task.CompletedTask;
+        }
+
+        private void ValidateTimerChangeArguments(TimeSpan dueTime, TimeSpan period)
+        {
+            using var validationTimer = this.RegisterGrainTimer(_ => Task.CompletedTask, new GrainTimerCreationOptions(Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan)
+            {
+                Interleave = true
+            });
+
+            validationTimer.Change(dueTime, period);
+        }
+
         public Task StopTimer(string name)
         {
             logger.LogInformation("StopTimer Name={Name}", name);
@@ -225,7 +311,9 @@ namespace UnitTestGrains
                     Assert.NotNull(timer[0]);
                     timer[0].Dispose();
                     Assert.True(ct.IsCancellationRequested);
-                    await Task.Delay(100);
+                    var delay = Task.Delay(TimeSpan.FromMilliseconds(100), timeProvider);
+                    TimerGrainCallbackEvents.EmitDelayScheduled(context.GrainId);
+                    await delay;
                     tcs.TrySetResult();
                 }
                 catch (Exception ex)
@@ -303,7 +391,9 @@ namespace UnitTestGrains
             CheckRuntimeContext(step);
 
             LogStatus("Before Delay");
-            await Task.Delay(TimerGrainTestConstants.CallbackDelay);
+            var delay = Task.Delay(TimerGrainTestConstants.CallbackDelay, timeProvider);
+            TimerGrainCallbackEvents.EmitDelayScheduled(context.GrainId);
+            await delay;
             step = "After Delay";
             LogStatus(step);
             CheckRuntimeContext(step);
@@ -367,10 +457,12 @@ namespace UnitTestGrains
         private Guid _tickId;
 
         private readonly ILogger _logger;
+        private readonly TimeProvider _timeProvider;
 
-        public NonReentrantTimerCallGrain(ILoggerFactory loggerFactory)
+        public NonReentrantTimerCallGrain(ILoggerFactory loggerFactory, TimeProvider timeProvider)
         {
             _logger = loggerFactory.CreateLogger($"{GetType().Name}-{IdentityString}");
+            _timeProvider = timeProvider;
         }
 
         public Task<int> GetTickCount() => Task.FromResult(_tickCount);
@@ -450,7 +542,9 @@ namespace UnitTestGrains
             CheckReentrancy(step, expectedTickId);
 
             LogStatus("Before Delay", timerName);
-            await Task.Delay(TimerGrainTestConstants.CallbackDelay);
+            var delay = Task.Delay(TimerGrainTestConstants.CallbackDelay, _timeProvider);
+            TimerGrainCallbackEvents.EmitDelayScheduled(_context.GrainId);
+            await delay;
             step = "After Delay";
             LogStatus(step, timerName);
             CheckRuntimeContext(step);
@@ -797,13 +891,15 @@ namespace UnitTestGrains
 
         private readonly ILogger logger;
         private readonly IGrainFactory _grainFactory;
+        private readonly TimeProvider _timeProvider;
 
         public IGrainContext GrainContext { get; }
 
-        public PocoTimerCallGrain(ILoggerFactory loggerFactory, IGrainContext grainContext, IGrainFactory grainFactory)
+        public PocoTimerCallGrain(ILoggerFactory loggerFactory, IGrainContext grainContext, IGrainFactory grainFactory, TimeProvider timeProvider)
         {
             GrainContext = grainContext;
             _grainFactory = grainFactory;
+            _timeProvider = timeProvider;
             this.logger = loggerFactory.CreateLogger($"{this.GetType().Name}-{this.GrainContext.GrainId}");
         }
 
@@ -821,7 +917,7 @@ namespace UnitTestGrains
         {
             logger.LogInformation("StartTimer Name={Name} Delay={Delay}", name, delay);
             if (timer is not null) throw new InvalidOperationException("Expected timer to be null");
-            this.timer = this.RegisterGrainTimer(TimerTick, name, new(delay, Timeout.InfiniteTimeSpan)); // One shot timer
+            this.timer = this.RegisterGrainTimer(TimerTick, name, new(delay, Timeout.InfiniteTimeSpan) { Interleave = true }); // One shot timer
             this.timerName = name;
 
             return Task.CompletedTask;
@@ -832,7 +928,7 @@ namespace UnitTestGrains
             logger.LogInformation("StartTimer Name={Name} Delay={Delay}", name, delay);
             if (timer is not null) throw new InvalidOperationException("Expected timer to be null");
             var state = Tuple.Create<string, object>(operationType, name);
-            this.timer = this.RegisterGrainTimer(TimerTickAdvanced, state, delay, Timeout.InfiniteTimeSpan); // One shot timer
+            this.timer = this.RegisterGrainTimer(TimerTickAdvanced, state, new(delay, Timeout.InfiniteTimeSpan) { Interleave = true }); // One shot timer
             this.timerName = name;
 
             return Task.CompletedTask;
@@ -854,6 +950,35 @@ namespace UnitTestGrains
             timer.Change(delay, period);
 
             return Task.CompletedTask;
+        }
+
+        public Task TestTimerChangeArguments()
+        {
+            ValidateTimerChangeArguments(Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
+            ValidateTimerChangeArguments(TimeSpan.Zero, Timeout.InfiniteTimeSpan);
+            ValidateTimerChangeArguments(TimeSpan.FromMicroseconds(10), Timeout.InfiniteTimeSpan);
+            ValidateTimerChangeArguments(TimeSpan.Zero, TimeSpan.Zero);
+            ValidateTimerChangeArguments(TimeSpan.FromMicroseconds(10), TimeSpan.FromMicroseconds(10));
+            ValidateTimerChangeArguments(TimeSpan.FromMilliseconds(-0.4), Timeout.InfiniteTimeSpan);
+            ValidateTimerChangeArguments(TimeSpan.FromSeconds(1), TimeSpan.FromMilliseconds(-0.5));
+            ValidateTimerChangeArguments(Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
+
+            Assert.Throws<ArgumentOutOfRangeException>(() => ValidateTimerChangeArguments(TimeSpan.FromSeconds(-5), Timeout.InfiniteTimeSpan));
+            Assert.Throws<ArgumentOutOfRangeException>(() => ValidateTimerChangeArguments(TimeSpan.MaxValue, Timeout.InfiniteTimeSpan));
+            Assert.Throws<ArgumentOutOfRangeException>(() => ValidateTimerChangeArguments(TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(-5)));
+            Assert.Throws<ArgumentOutOfRangeException>(() => ValidateTimerChangeArguments(TimeSpan.FromSeconds(1), TimeSpan.MaxValue));
+
+            return Task.CompletedTask;
+        }
+
+        private void ValidateTimerChangeArguments(TimeSpan dueTime, TimeSpan period)
+        {
+            using var validationTimer = this.RegisterGrainTimer(_ => Task.CompletedTask, new GrainTimerCreationOptions(Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan)
+            {
+                Interleave = true
+            });
+
+            validationTimer.Change(dueTime, period);
         }
 
         public Task StopTimer(string name)
@@ -882,7 +1007,9 @@ namespace UnitTestGrains
                     Assert.NotNull(timer[0]);
                     timer[0].Dispose();
                     Assert.True(ct.IsCancellationRequested);
-                    await Task.Delay(100);
+                    var delay = Task.Delay(TimeSpan.FromMilliseconds(100), _timeProvider);
+                    TimerGrainCallbackEvents.EmitDelayScheduled(context.GrainId);
+                    await delay;
                     tcs.TrySetResult();
                 }
                 catch (Exception ex)
@@ -960,7 +1087,9 @@ namespace UnitTestGrains
             CheckRuntimeContext(step);
 
             LogStatus("Before Delay");
-            await Task.Delay(TimerGrainTestConstants.CallbackDelay);
+            var delay = Task.Delay(TimerGrainTestConstants.CallbackDelay, _timeProvider);
+            TimerGrainCallbackEvents.EmitDelayScheduled(context.GrainId);
+            await delay;
             step = "After Delay";
             LogStatus(step);
             CheckRuntimeContext(step);
@@ -1176,13 +1305,15 @@ namespace UnitTestGrains
 
         private readonly ILogger _logger;
         private readonly IGrainFactory _grainFactory;
+        private readonly TimeProvider _timeProvider;
 
         public IGrainContext GrainContext { get; }
 
-        public PocoNonReentrantTimerCallGrain(ILoggerFactory loggerFactory, IGrainContext grainContext, IGrainFactory grainFactory)
+        public PocoNonReentrantTimerCallGrain(ILoggerFactory loggerFactory, IGrainContext grainContext, IGrainFactory grainFactory, TimeProvider timeProvider)
         {
             GrainContext = grainContext;
             _grainFactory = grainFactory;
+            _timeProvider = timeProvider;
             _logger = loggerFactory.CreateLogger($"{GetType().Name}-{GrainContext.GrainId}");
         }
 
@@ -1212,7 +1343,9 @@ namespace UnitTestGrains
                     Assert.NotNull(timer[0]);
                     timer[0].Dispose();
                     tcs.TrySetResult();
-                    await Task.Delay(100);
+                    var delay = Task.Delay(TimeSpan.FromMilliseconds(100), _timeProvider);
+                    TimerGrainCallbackEvents.EmitDelayScheduled(_context.GrainId);
+                    await delay;
                 }
                 catch (Exception ex)
                 {
@@ -1289,7 +1422,9 @@ namespace UnitTestGrains
             CheckReentrancy(step, expectedTickId);
 
             LogStatus("Before Delay", timerName);
-            await Task.Delay(TimerGrainTestConstants.CallbackDelay);
+            var delay = Task.Delay(TimerGrainTestConstants.CallbackDelay, _timeProvider);
+            TimerGrainCallbackEvents.EmitDelayScheduled(_context.GrainId);
+            await delay;
             step = "After Delay";
             LogStatus(step, timerName);
             CheckRuntimeContext(step);
