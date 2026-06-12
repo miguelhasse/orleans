@@ -12,6 +12,7 @@ using System.Threading;
 using Orleans.Streams.Filtering;
 using Orleans.Runtime.Scheduler;
 using System.Diagnostics.Metrics;
+using StreamingEvents = Orleans.Streaming.Diagnostics.StreamingEvents;
 
 #nullable disable
 namespace Orleans.Streams
@@ -130,9 +131,11 @@ namespace Orleans.Streams
         {
             managerState = RunState.AgentsStarted;
             List<QueueId> myQueues = queueBalancer.GetMyQueues().ToList();
+            var previousQueues = CaptureAgentQueuesIfDiagnosticsEnabled();
 
             LogInfoStarting(myQueues.Count, new(myQueues));
             await AddNewQueues(myQueues, true);
+            EmitAgentQueueChange(previousQueues);
             LogInfoStarted();
         }
 
@@ -142,6 +145,7 @@ namespace Orleans.Streams
             List<QueueId> queuesToRemove = queuesToAgentsMap.Keys.ToList();
             LogInfoStopping(queuesToRemove.Count, new(queuesToRemove));
             await RemoveQueues(queuesToRemove);
+            EmitAgentQueueChange(queuesToRemove);
             LogInfoStopped();
         }
 
@@ -186,6 +190,7 @@ namespace Orleans.Streams
         private async Task QueueDistributionChangeNotification(int notificationSeqNumber)
         {
             HashSet<QueueId> currentQueues = queueBalancer.GetMyQueues().ToSet();
+            IReadOnlyCollection<QueueId> previousQueues = CaptureAgentQueuesIfDiagnosticsEnabled();
             LogInfoExecutingQueueChangeNotification(
                 notificationSeqNumber,
                 currentQueues.Count,
@@ -202,11 +207,47 @@ namespace Orleans.Streams
             }
             finally
             {
+                EmitAgentQueueChange(previousQueues);
                 LogInfoDoneExecutingQueueChangeNotification(
                     notificationSeqNumber,
                     NumberRunningAgents,
                     new(queuesToAgentsMap.Keys));
             }
+        }
+
+        private QueueId[] CaptureAgentQueuesIfDiagnosticsEnabled() => StreamingEvents.IsBalancerChangedEnabled() ? queuesToAgentsMap.Keys.ToArray() : null;
+
+        private void EmitAgentQueueChange(IReadOnlyCollection<QueueId> previousQueues)
+        {
+            if (previousQueues is null || !StreamingEvents.IsBalancerChangedEnabled())
+            {
+                return;
+            }
+
+            if (HasSameAgentQueues(previousQueues))
+            {
+                return;
+            }
+
+            StreamingEvents.EmitQueueChange(streamProviderName, Silo, previousQueues as QueueId[] ?? [.. previousQueues], queuesToAgentsMap.Keys.ToArray(), queueBalancer);
+        }
+
+        private bool HasSameAgentQueues(IReadOnlyCollection<QueueId> previousQueues)
+        {
+            if (previousQueues.Count != queuesToAgentsMap.Count)
+            {
+                return false;
+            }
+
+            foreach (var queueId in previousQueues)
+            {
+                if (!queuesToAgentsMap.ContainsKey(queueId))
+                {
+                    return false;
+                }
+            }
+
+            return true;
         }
 
         /// <summary>
