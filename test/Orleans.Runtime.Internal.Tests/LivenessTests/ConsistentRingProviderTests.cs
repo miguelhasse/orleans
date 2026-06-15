@@ -1,4 +1,3 @@
-using System.Collections.Immutable;
 using System.Net;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -182,8 +181,7 @@ namespace UnitTests.LivenessTests
             }
 
             public bool UnSubscribeFromSiloStatusEvents(ISiloStatusListener observer) => _subscribers.Remove(observer);
-            public ImmutableArray<SiloAddress> GetActiveSilos() => [.. GetApproximateSiloStatuses(onlyActive: true).Keys];
+            public SiloAddress[] GetActiveSilos() => [.. GetApproximateSiloStatuses(onlyActive: true).Keys];
         }
     }
 }
-
