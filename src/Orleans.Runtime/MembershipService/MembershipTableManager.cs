@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
+using System.Diagnostics;
 using System.Linq;
 using System.Reflection;
 using System.Threading;
@@ -139,16 +140,7 @@ namespace Orleans.Runtime.MembershipService
 
             LogInformationReceivedClusterMembershipSnapshot(this.log, snapshot);
 
-            if (snapshot.Entries.TryGetValue(this.myAddress, out var localSiloEntry))
-            {
-                if (localSiloEntry.Status == SiloStatus.Dead && this.CurrentStatus != SiloStatus.Dead)
-                {
-                    LogWarningFoundMyselfDeadInRefreshFromSnapshot(this.log, localSiloEntry.ToFullString());
-                    this.KillMyselfLocally($"I should be Dead according to membership table (in RefreshFromSnapshot). Local entry: {(localSiloEntry.ToFullString())}.");
-                }
-            }
-
-            this.updates.TryPublish(MembershipTableSnapshot.Update, snapshot);
+            this.TryProcessMembershipUpdate(MembershipTableSnapshot.Update, snapshot, nameof(RefreshFromSnapshot));
         }
 
         private async Task<bool> RefreshInternal(bool requireCleanup)
@@ -476,12 +468,72 @@ namespace Orleans.Runtime.MembershipService
             if (table is null) throw new ArgumentNullException(nameof(table));
             LogDebugProcessTableUpdate(this.log, caller, table);
 
-            if (this.updates.TryPublish(MembershipTableSnapshot.Update, table))
+            if (this.TryProcessMembershipUpdate(MembershipTableSnapshot.Update, table, caller))
             {
                 this.LogMissedIAmAlives(table);
 
                 LogDebugProcessTableUpdateWithTable(this.log, caller, new(table));
                 MembershipEvents.EmitViewChanged(this.snapshot, this.myAddress);
+            }
+        }
+
+        private bool TryProcessMembershipUpdate<TState>(
+            Func<MembershipTableSnapshot, TState, MembershipTableSnapshot> updateFunc,
+            TState state,
+            string caller)
+        {
+            if (!this.updates.TryPublish(
+                static (previous, update) => update.Manager.ProcessMembershipUpdate(
+                    previous,
+                    update.UpdateFunc(previous, update.State)),
+                (Manager: this, UpdateFunc: updateFunc, State: state)))
+            {
+                return false;
+            }
+
+            this.CheckIfLocalSiloIsDead(caller);
+            return true;
+        }
+
+        private MembershipTableSnapshot ProcessMembershipUpdate(
+            MembershipTableSnapshot previous,
+            MembershipTableSnapshot updated)
+        {
+            if (!previous.Entries.TryGetValue(this.myAddress, out var previousLocalSiloEntry)
+                || previousLocalSiloEntry.Status == SiloStatus.Created)
+            {
+                return updated;
+            }
+
+            if (updated.Entries.TryGetValue(this.myAddress, out var localSiloEntry))
+            {
+                Debug.Assert(
+                    previousLocalSiloEntry.Status != SiloStatus.Dead || localSiloEntry.Status == SiloStatus.Dead,
+                    "The local silo cannot transition from Dead to another status.");
+                return updated;
+            }
+
+            // The local silo was present in the previous view but is missing now. Preserve its entry so
+            // that non-newer views cannot erase it; a newer view means that it is dead, so publish an
+            // artificial Dead entry for downstream observers before self-terminating.
+            return new MembershipTableSnapshot(
+                updated.Version,
+                updated.Entries.SetItem(
+                    this.myAddress,
+                    previousLocalSiloEntry.Status == SiloStatus.Dead || updated.Version > previous.Version
+                        ? previousLocalSiloEntry.WithStatus(SiloStatus.Dead)
+                        : previousLocalSiloEntry));
+        }
+
+        private void CheckIfLocalSiloIsDead(string caller)
+        {
+            var current = this.snapshot;
+            if (this.CurrentStatus != SiloStatus.Dead
+                && current.Entries.TryGetValue(this.myAddress, out var localSiloEntry)
+                && localSiloEntry.Status == SiloStatus.Dead)
+            {
+                LogWarningFoundMyselfDeadInMembershipUpdate(this.log, caller, localSiloEntry.ToFullString());
+                this.KillMyselfLocally($"I should be Dead according to the membership table (in {caller}). Local entry: {localSiloEntry.ToFullString()}.");
             }
         }
 
@@ -951,9 +1003,9 @@ namespace Orleans.Runtime.MembershipService
         [LoggerMessage(
             EventId = (int)ErrorCode.MembershipFoundMyselfDead1,
             Level = LogLevel.Warning,
-            Message = "I should be Dead according to membership table (in RefreshFromSnapshot). Local entry: {Entry}."
+            Message = "I should be Dead according to the membership table (in {Caller}). Local entry: {Entry}."
         )]
-        private static partial void LogWarningFoundMyselfDeadInRefreshFromSnapshot(ILogger logger, string entry);
+        private static partial void LogWarningFoundMyselfDeadInMembershipUpdate(ILogger logger, string caller, string entry);
 
         [LoggerMessage(
             Level = LogLevel.Warning,
