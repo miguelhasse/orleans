@@ -1,11 +1,13 @@
 using System.Runtime.InteropServices;
 using Microsoft.CodeAnalysis;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Orleans.CodeGeneration;
 using Orleans.GrainReferences;
 using Orleans.Internal;
 using Orleans.Metadata;
+using Orleans.Reminders;
 using Orleans.Reminders.Diagnostics;
 using Orleans.Runtime.ConsistentRing;
 using Orleans.Runtime.Internal;
@@ -45,7 +47,7 @@ namespace Orleans.Runtime.ReminderService
             IAsyncTimerFactory asyncTimerFactory,
             IOptions<ReminderOptions> reminderOptions,
             IConsistentRingProvider ringProvider,
-            TimeProvider timeProvider,
+            [FromKeyedServices(ReminderTimeProviderNames.Reminders)] TimeProvider timeProvider,
             ReminderInstruments reminderInstruments,
             SystemTargetShared shared)
             : base(
@@ -63,7 +65,7 @@ namespace Orleans.Runtime.ReminderService
             _reminderInstruments.RegisterActiveRemindersObserve(() => localReminders.Count);
             startedTask = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
             this.logger = shared.LoggerFactory.CreateLogger<LocalReminderService>();
-            this.listRefreshTimer = asyncTimerFactory.Create(this.reminderOptions.RefreshReminderListPeriod, "ReminderService.ReminderListRefresher");
+            this.listRefreshTimer = asyncTimerFactory.Create(this.reminderOptions.RefreshReminderListPeriod, "ReminderService.ReminderListRefresher", _timeProvider);
             shared.ActivationDirectory.RecordNewTarget(this);
         }
 
@@ -1032,7 +1034,7 @@ namespace Orleans.Runtime.ReminderService
 
             private IAsyncTimer CreateTimer(ReminderEntry entry)
             {
-                return _shared.asyncTimerFactory.Create(entry.Period, "ReminderService.LocalReminder");
+                return _shared.asyncTimerFactory.Create(entry.Period, "ReminderService.LocalReminder", _shared._timeProvider);
             }
 
             private TimeSpan GetInitialDueTime(ReminderEntry entry)
