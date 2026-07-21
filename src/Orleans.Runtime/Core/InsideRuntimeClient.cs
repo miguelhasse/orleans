@@ -47,7 +47,7 @@ namespace Orleans.Runtime
         private IGrainCallCancellationManager _cancellationManager;
         private HostedClient hostedClient;
 
-        private HostedClient HostedClient => this.hostedClient ??= this.ServiceProvider.GetRequiredService<HostedClient>();
+        private HostedClient HostedClient => this.hostedClient;
         private readonly MessageFactory messageFactory;
         private IGrainReferenceRuntime grainReferenceRuntime;
         private Task callbackTimerTask;
@@ -113,15 +113,25 @@ namespace Orleans.Runtime
 
         public GrainFactory ConcreteGrainFactory { get; }
 
-        private GrainLocator GrainLocator
-            => this.grainLocator ?? (this.grainLocator = this.ServiceProvider.GetRequiredService<GrainLocator>());
+        private GrainLocator GrainLocator => this.grainLocator;
 
-        private List<IIncomingGrainCallFilter> GrainCallFilters
-            => this.grainCallFilters ??= new List<IIncomingGrainCallFilter>(this.ServiceProvider.GetServices<IIncomingGrainCallFilter>());
+        private List<IIncomingGrainCallFilter> GrainCallFilters => this.grainCallFilters;
 
-        private MessageCenter MessageCenter => this.messageCenter ?? (this.messageCenter = this.ServiceProvider.GetRequiredService<MessageCenter>());
+        private MessageCenter MessageCenter => this.messageCenter;
 
-        public IGrainReferenceRuntime GrainReferenceRuntime => this.grainReferenceRuntime ?? (this.grainReferenceRuntime = this.ServiceProvider.GetRequiredService<IGrainReferenceRuntime>());
+        public IGrainReferenceRuntime GrainReferenceRuntime => this.grainReferenceRuntime;
+
+        internal void ConsumeServices()
+        {
+            this.grainLocator = this.ServiceProvider.GetRequiredService<GrainLocator>();
+            this.grainCallFilters = new List<IIncomingGrainCallFilter>(this.ServiceProvider.GetServices<IIncomingGrainCallFilter>());
+            this.messageCenter = this.ServiceProvider.GetRequiredService<MessageCenter>();
+            this.grainReferenceRuntime = this.ServiceProvider.GetRequiredService<IGrainReferenceRuntime>();
+            this.hostedClient = this.ServiceProvider.GetRequiredService<HostedClient>();
+            _cancellationManager = this.ServiceProvider.GetRequiredService<IGrainCallCancellationManager>();
+            sharedCallbackData.CancellationManager = _cancellationManager;
+            systemSharedCallbackData.CancellationManager = _cancellationManager;
+        }
 
         public void SendRequest(
             GrainReference target,
@@ -600,9 +610,7 @@ namespace Orleans.Runtime
 
         public void Participate(ISiloLifecycle lifecycle)
         {
-            _cancellationManager = this.ServiceProvider.GetRequiredService<IGrainCallCancellationManager>();
-            sharedCallbackData.CancellationManager = _cancellationManager;
-            systemSharedCallbackData.CancellationManager = _cancellationManager;
+            ConsumeServices();
             lifecycle.Subscribe<InsideRuntimeClient>(ServiceLifecycleStage.RuntimeInitialize, OnRuntimeInitializeStart, OnRuntimeInitializeStop);
         }
 
