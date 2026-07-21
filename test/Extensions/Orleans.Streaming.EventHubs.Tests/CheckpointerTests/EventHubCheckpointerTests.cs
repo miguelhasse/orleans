@@ -125,6 +125,24 @@ public class EventHubCheckpointerTests
         }
     }
 
+    private sealed class BlockingEventHubReceiver : IEventHubReceiver
+    {
+        public int CloseCount { get; private set; }
+
+        public Task<IEnumerable<EventData>> ReceiveAsync(int maxCount, TimeSpan waitTime)
+        {
+            return Task.FromResult<IEnumerable<EventData>>([]);
+        }
+
+        public Task CloseAsync() => CloseAsync(CancellationToken.None);
+
+        public Task CloseAsync(CancellationToken cancellationToken)
+        {
+            CloseCount++;
+            return Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+        }
+    }
+
     private static EventHubSequenceToken MakeToken(long offset, long sequenceNumber = 0)
     {
         return new EventHubSequenceToken(offset.ToString(), sequenceNumber, 0);
@@ -143,7 +161,7 @@ public class EventHubCheckpointerTests
     private static async Task<EventHubAdapterReceiver> CreateReceiver(
         TestCheckpointer checkpointer,
         TestEventHubQueueCache cache = null,
-        TestEventHubReceiver eventHubReceiver = null)
+        IEventHubReceiver eventHubReceiver = null)
     {
         var settings = new EventHubPartitionSettings
         {
@@ -201,6 +219,22 @@ public class EventHubCheckpointerTests
         var receiver = await CreateReceiver(checkpointer, cache, eventHubReceiver);
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => receiver.Shutdown(TimeSpan.FromSeconds(5)));
+
+        Assert.Equal(1, checkpointer.FlushCount);
+        Assert.Equal(1, cache.DisposeCount);
+        Assert.Equal(1, eventHubReceiver.CloseCount);
+    }
+
+    [Fact, TestCategory("BVT")]
+    public async Task Shutdown_CancelsBlockedReceiverClose()
+    {
+        var checkpointer = new TestCheckpointer();
+        var cache = new TestEventHubQueueCache();
+        var eventHubReceiver = new BlockingEventHubReceiver();
+        var receiver = await CreateReceiver(checkpointer, cache, eventHubReceiver);
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => receiver.Shutdown(TimeSpan.FromMilliseconds(50)).WaitAsync(TimeSpan.FromSeconds(5)));
 
         Assert.Equal(1, checkpointer.FlushCount);
         Assert.Equal(1, cache.DisposeCount);
