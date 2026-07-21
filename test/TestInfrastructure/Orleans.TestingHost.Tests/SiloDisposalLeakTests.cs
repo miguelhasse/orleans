@@ -1,9 +1,10 @@
 using System;
-using System.Linq;
+using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
 using Orleans.Runtime;
+using Orleans.Runtime.Placement;
 using Orleans.TestingHost.Tests.Grains;
 using TestExtensions;
 using Xunit;
@@ -88,57 +89,72 @@ namespace Orleans.TestingHost.Tests
         [Fact]
         public async Task KilledSilo_WithInFlightOutboundCall_DisposesPromptly()
         {
+            const int PendingCallCount = 8;
+
             // Regression test for the deadlock that surfaced in CI: killing a silo whose stateless
-            // worker is awaiting an outbound call (whose response can never arrive once the silo stops)
+            // workers are awaiting outbound calls (whose responses can never arrive once the silo stops)
             // must not hang while disposing the silo host. A stateless worker's grain context disposal
-            // awaits the worker's deactivation, which cannot complete until the outbound call does; the
-            // runtime faults outstanding callbacks during shutdown so that deactivation can complete.
+            // awaits each worker's deactivation. Faulting those calls resumes the workers, which retry
+            // and would register new callbacks after the shutdown sweep unless registration is closed.
             var builder = new InProcessTestClusterBuilder(2);
             builder.ConfigureHost(hostBuilder => TestDefaultConfiguration.ConfigureHostConfiguration(hostBuilder.Configuration));
             await using var cluster = builder.Build();
             await cluster.DeployAsync();
 
             var client = cluster.Client;
+            var launcherHandle = cluster.Silos[0];
+            var remoteHandle = cluster.Silos[1];
 
-            // The launcher is an identity-placed grain: it gives us a deterministic silo to kill, and
-            // the stateless worker it invokes is placed on that same silo.
+            // Place the launcher on the silo which will be killed. The stateless workers it invokes are
+            // placed on that same silo.
+            RequestContext.Set(IPlacementDirector.PlacementHintKey, launcherHandle.SiloAddress);
             var launcher = client.GetGrain<ILauncherGrain>(Guid.NewGuid());
-            var launcherSilo = await launcher.GetSiloIdentity();
-
-            // The remote blocker must live on a different silo so the worker's call is a genuine
-            // outbound request whose response is severed when the launcher's silo is killed.
-            IRemoteBlockerGrain remote = null;
-            var remoteKey = Guid.Empty;
-            for (var i = 0; i < 200 && remote is null; i++)
+            try
             {
-                var key = Guid.NewGuid();
-                var candidate = client.GetGrain<IRemoteBlockerGrain>(key);
-                var silo = await candidate.GetSiloIdentity();
-                if (silo != launcherSilo)
-                {
-                    remote = candidate;
-                    remoteKey = key;
-                }
+                Assert.Equal(launcherHandle.SiloAddress.ToString(), await launcher.GetSiloIdentity());
+            }
+            finally
+            {
+                RequestContext.Remove(IPlacementDirector.PlacementHintKey);
             }
 
-            Assert.NotNull(remote);
+            var remoteKeys = new List<Guid>(PendingCallCount);
+            for (var call = 0; call < PendingCallCount; call++)
+            {
+                // Place each blocker on the surviving silo so the worker's call is a genuine outbound
+                // request whose response is severed when the launcher's silo is killed.
+                var remoteKey = Guid.NewGuid();
+                RequestContext.Set(IPlacementDirector.PlacementHintKey, remoteHandle.SiloAddress);
+                var remote = client.GetGrain<IRemoteBlockerGrain>(remoteKey);
+                try
+                {
+                    Assert.Equal(remoteHandle.SiloAddress.ToString(), await remote.GetSiloIdentity());
+                }
+                finally
+                {
+                    RequestContext.Remove(IPlacementDirector.PlacementHintKey);
+                }
 
-            var worker = client.GetGrain<ILocalWorkerGrain>(Guid.NewGuid());
+                remoteKeys.Add(remoteKey);
 
-            // Trigger the outbound call from a stateless worker co-located on the launcher's silo.
-            await launcher.StartBlockingCall(worker, remote);
-            Assert.True(await RemoteBlockerGrain.WaitForEntered(remoteKey, TimeSpan.FromSeconds(30)), "The blocking call was never entered.");
+                // Trigger the outbound call from a stateless worker co-located on the launcher's silo.
+                var worker = client.GetGrain<ILocalWorkerGrain>(Guid.NewGuid());
+                await launcher.StartBlockingCall(worker, remote);
+                Assert.True(await RemoteBlockerGrain.WaitForEntered(remoteKey, TimeSpan.FromSeconds(30)), "The blocking call was never entered.");
+            }
 
-            var launcherHandle = cluster.Silos.Single(s => s.SiloAddress.ToString() == launcherSilo);
-
-            // Kill the launcher's silo (ungraceful) and dispose its host. Prior to the fix this hangs.
+            // Kill the launcher's silo (ungraceful) and dispose its host. Prior to the fix this can hang
+            // if cancellation interrupts callback timer shutdown before the callbacks are faulted.
             var killAndDispose = cluster.KillSiloAsync(launcherHandle);
             var completed = await Task.WhenAny(killAndDispose, Task.Delay(TimeSpan.FromSeconds(60)));
             Assert.True(completed == killAndDispose, "Killing a silo with an in-flight outbound call should not hang host disposal.");
             await killAndDispose;
 
             // Allow the surviving silo to shut down cleanly.
-            RemoteBlockerGrain.Release(remoteKey);
+            foreach (var remoteKey in remoteKeys)
+            {
+                RemoteBlockerGrain.Release(remoteKey);
+            }
         }
 
         private static void AssertCollected(WeakReference weakRef)
