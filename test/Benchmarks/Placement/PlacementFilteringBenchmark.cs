@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using System.Diagnostics.CodeAnalysis;
 using System.Net;
+using System.Globalization;
 using BenchmarkDotNet.Attributes;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -8,7 +9,6 @@ using Microsoft.Extensions.Options;
 using Orleans.Configuration;
 using Orleans.Metadata;
 using Orleans.Placement;
-using Orleans.Runtime;
 using Orleans.Runtime.MembershipService.SiloMetadata;
 using Orleans.Runtime.Placement;
 using Orleans.Runtime.Placement.Filtering;
@@ -68,7 +68,7 @@ public class PlacementFilteringBenchmark
             [new PreferredMatchSiloMetadataPlacementFilterStrategy(["rack", "zone"], 2, 0)],
             [new PendingStrategy()],
         ];
-        _targets = filters.Select((_, i) => new PlacementTarget(GrainId.Create($"placement-benchmark-{i}", "key"), [], default, 0)).ToArray();
+        _targets = [.. filters.Select((_, i) => new PlacementTarget(GrainId.Create($"placement-benchmark-{i}", "key"), [], default, 0))];
         var grainProperties = new Dictionary<GrainType, GrainProperties>();
         for (var i = 0; i < _targets.Length; i++)
         {
@@ -81,7 +81,7 @@ public class PlacementFilteringBenchmark
             grainProperties.Add(_targets[i].GrainIdentity.Type, new GrainProperties(properties.ToImmutableDictionary(StringComparer.Ordinal)));
         }
 
-        var manifest = new GrainManifest(grainProperties.ToImmutableDictionary(), ImmutableDictionary<GrainInterfaceType, GrainInterfaceProperties>.Empty);
+        var manifest = new GrainManifest(grainProperties.ToImmutableDictionary(), []);
         var manifests = new FixedManifestProvider(environment.Silos, manifest);
         var versionManifest = new GrainVersionManifest(manifests);
         var versionOptions = _provider.GetRequiredService<IOptions<GrainVersioningOptions>>();
@@ -105,18 +105,18 @@ public class PlacementFilteringBenchmark
             _provider.GetRequiredService<Polly.Registry.ResiliencePipelineProvider<string>>());
         _lifecycle = new SiloLifecycleSubject(NullLogger<SiloLifecycleSubject>.Instance);
         ((ILifecycleParticipant<ISiloLifecycle>)_service).Participate(_lifecycle);
-        await _lifecycle.OnStart(CancellationToken.None);
+        await _lifecycle.OnStart(CancellationToken.None).ConfigureAwait(false);
         foreach (var target in _targets)
         {
-            await _service.GetCompatibleSilosAsync(target);
+            await _service.GetCompatibleSilosAsync(target).ConfigureAwait(false);
         }
     }
 
     [GlobalCleanup]
     public async Task Cleanup()
     {
-        await _lifecycle.OnStop(CancellationToken.None);
-        await _provider.DisposeAsync();
+        await _lifecycle.OnStop(CancellationToken.None).ConfigureAwait(false);
+        await _provider.DisposeAsync().ConfigureAwait(false);
     }
 
     [Benchmark(Baseline = true)]
@@ -190,7 +190,7 @@ public class PlacementFilteringBenchmark
         private async IAsyncEnumerable<ClusterManifest> GetUpdates()
         {
             yield return Current;
-            await Task.CompletedTask;
+            await Task.CompletedTask.ConfigureAwait(false);
         }
     }
 
@@ -201,12 +201,12 @@ public class PlacementFilteringBenchmark
 
         public CandidateEnvironment(int count)
         {
-            Silos = Enumerable.Range(0, count).Select(i => SiloAddress.New(IPAddress.Loopback, 11111 + i, 1)).ToArray();
+            Silos = [.. Enumerable.Range(0, count).Select(i => SiloAddress.New(IPAddress.Loopback, 11111 + i, 1))];
             for (var i = 0; i < count; i++)
             {
                 var metadata = new SiloMetadata();
-                metadata.AddMetadata("zone", (i % 2).ToString());
-                metadata.AddMetadata("rack", (i % 4).ToString());
+                metadata.AddMetadata("zone", (i % 2).ToString(CultureInfo.InvariantCulture));
+                metadata.AddMetadata("rack", (i % 4).ToString(CultureInfo.InvariantCulture));
                 _metadata.Add(Silos[i], metadata);
             }
         }
